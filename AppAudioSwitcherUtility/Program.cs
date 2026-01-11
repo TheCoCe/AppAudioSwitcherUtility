@@ -1,13 +1,20 @@
 using System;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
 using System.Text.Json;
 using AppAudioSwitcherUtility.Audio;
 using AppAudioSwitcherUtility.Process;
+using AppAudioSwitcherUtility.Server;
 using AppAudioSwitcherUtility.Utils;
 
 namespace AppAudioSwitcherUtility
 {
     internal static class Program
     {
+        private static IAudioPolicyConfigFactory _policyConfigFactory;
+        private static IAudioPolicyConfigFactory PolicyConfigFactory => _policyConfigFactory ?? (_policyConfigFactory = new AudioPolicyConfigFactoryImplForDownlevel());
+
         public static int Main(string[] args)
         {
             CommandLineParser commandLineParser = new CommandLineParser(args);
@@ -16,48 +23,108 @@ namespace AppAudioSwitcherUtility
             {
                 case "get":
                 {
-                    return HandleGetCommand(commandLineParser);
+                    string getResponse = HandleGetCommand(commandLineParser);
+                    if (!string.IsNullOrEmpty(getResponse))
+                    {
+                        Console.WriteLine(getResponse);
+                        return 0;
+                    }
+
+                    return -1;
                 }
                 case "set":
                 {
                     return HandleSetCommand(commandLineParser);
+                }
+                case "server":
+                {
+                    int port = 32122;
+                    string portStr = commandLineParser.GetStringArgument("port", 'p');
+                    if (!string.IsNullOrEmpty(portStr))
+                    {
+                        try
+                        {
+                            port = int.Parse(portStr);
+                        }
+                        catch
+                        {
+                            // Fallthrough
+                        }
+                    }
+                    return HandleServerMode(port);
                 }
             }
 
             return 0;
         }
 
-        static int HandleGetCommand(CommandLineParser parser)
+        private static int HandleServerMode(int port)
         {
-            string mode = parser.GetStringArgument("get", 'g', out bool bFound);
+            AppAudioSwitcherServer server = new AppAudioSwitcherServer(port);
+            server.MessageReceived += HandleMessageReceived;
+            return server.Run();
+        }
+
+        private static void HandleMessageReceived(AppAudioSwitcherServer server, string message)
+        {
+            if (message.ToLower() == "close")
+            {
+                server.Stop();
+                return;
+            }
+            
+            string[] args = message.Split(' ');
+            CommandLineParser parser = new CommandLineParser(args);
+            
+            string mode = parser.GetFirstKey();
+            switch (mode)
+            {
+                case "get":
+                {
+                    server.SendMessage(HandleGetCommand(parser));
+                    break;
+                }
+                case "set":
+                {
+                    HandleSetCommand(parser);
+                    break;
+                }
+            }
+        }
+
+        private static string HandleGetCommand(CommandLineParser parser)
+        {
+            string mode = parser.GetStringArgument("get", 'g');
             switch (mode)
             {
                 case "devices":
                 {
-                    string dataFlowStr = parser.GetStringArgument("type", 't', out bFound);
-                    EDataFlow dataFlow = InteropTypeExtensions.StrToDataFlow(bFound ? dataFlowStr : "render");
-                    string deviceStateStr = parser.GetStringArgument("state", 's', out bFound);
-                    DeviceState deviceState = InteropTypeExtensions.StrToDeviceState(bFound ? deviceStateStr : "active");
+                    string dataFlowStr = parser.GetStringArgument("type", 't');
+                    EDataFlow dataFlow = InteropTypeExtensions.StrToDataFlow(!string.IsNullOrEmpty(dataFlowStr) ? dataFlowStr : "render");
+                    string deviceStateStr = parser.GetStringArgument("state", 's');
+                    DeviceState deviceState = InteropTypeExtensions.StrToDeviceState(!string.IsNullOrEmpty(deviceStateStr) ? deviceStateStr : "active");
 
                     string devicesJson = GetDevicesJson(dataFlow, deviceState);
-                    Console.WriteLine(devicesJson);
-                    return 0;
+                    return devicesJson;
                 }
                 case "focused":
                 {
                     string processJson = parser.HasStringKey("icon", 'i') ? GetProcessJsonWithIcon() : GetProcessJson();
-                    Console.WriteLine(processJson);
-                    return 0;
+                    return processJson;
                 }
                 default:
-                    return -1;
+                    return null;
             }
         }
 
         private static string GetDevicesJson(EDataFlow dataFlow, DeviceState state)
         {
             AudioDevice[] devices = AudioDeviceUtils.GetAudioDevices(dataFlow, state);
-            return JsonSerializer.Serialize(new { devices });
+            return JsonSerializer.Serialize(new
+            {
+                id = "devices", 
+                payload = new { devices } 
+            });
         }
 
         private static string GetProcessJson()
@@ -71,9 +138,13 @@ namespace AppAudioSwitcherUtility
 
             return JsonSerializer.Serialize(new
             {
-                processId = processId.ToString(),
-                processName = ProcessUtilities.GetProcessName((int)processId),
-                deviceId = UnpackDeviceId(deviceId)
+                id = "focused",
+                payload = new
+                {
+                    processId = processId.ToString(),
+                    processName = ProcessUtilities.GetFriendlyName((int)processId),
+                    deviceId = UnpackDeviceId(deviceId)
+                }
             });
         }
 
@@ -89,23 +160,27 @@ namespace AppAudioSwitcherUtility
             
             return JsonSerializer.Serialize(new
             {
-                processId = processId.ToString(),
-                processName = ProcessUtilities.GetFriendlyName((int)processId),
-                deviceId = UnpackDeviceId(deviceId),
-                processIconBase64
+                id = "icon",
+                payload = new
+                {
+                    processId = processId.ToString(),
+                    processName = ProcessUtilities.GetFriendlyName((int)processId),
+                    deviceId = UnpackDeviceId(deviceId),
+                    processIconBase64
+                }
             });
         }
 
         private static int HandleSetCommand(CommandLineParser parser)
         {
-            string mode = parser.GetStringArgument("set", 's', out bool bFound);
+            string mode = parser.GetStringArgument("set", 's');
             switch (mode)
             {
                 case "appDevice":
                 {
                     // Try to get the process id param
-                    string processStr = parser.GetStringArgument("process", 'p', out bFound);
-                    if (!bFound || string.IsNullOrEmpty(processStr))
+                    string processStr = parser.GetStringArgument("process", 'p');
+                    if (string.IsNullOrEmpty(processStr))
                     {
                         return -1;
                     }
@@ -123,8 +198,8 @@ namespace AppAudioSwitcherUtility
                     }
 
                     // Try to parese the device id parameter
-                    string device = parser.GetStringArgument("device", 'd', out bFound);
-                    if (!bFound || string.IsNullOrEmpty(device))
+                    string device = parser.GetStringArgument("device", 'd');
+                    if (string.IsNullOrEmpty(device))
                     {
                         return -1;
                     }
@@ -162,7 +237,6 @@ namespace AppAudioSwitcherUtility
         private static bool SetPersistedDefaultAudioEndpoint(uint processId, EDataFlow dataFlow, ERole role, string deviceId)
         {
             // this crashes due to failed marshalling param, no idea what that means
-            IAudioPolicyConfigFactory policyConfig = new AudioPolicyConfigFactoryImplForDownlevel();
             IntPtr hstring = IntPtr.Zero;
 
             if (!string.IsNullOrEmpty(deviceId))
@@ -171,13 +245,12 @@ namespace AppAudioSwitcherUtility
                 Combase.WindowsCreateString(str, (uint)str.Length, out hstring);
             }
 
-            return policyConfig.SetPersistedDefaultAudioEndpoint(processId, dataFlow, role, hstring) == HRESULT.S_OK;
+            return PolicyConfigFactory.SetPersistedDefaultAudioEndpoint(processId, dataFlow, role, hstring) == HRESULT.S_OK;
         }
 
         private static string GetPersitedDefaultAudioEndpoint(uint processId, EDataFlow dataFlow, ERole role)
         {
-            IAudioPolicyConfigFactory policyConfig = new AudioPolicyConfigFactoryImplForDownlevel();
-            policyConfig.GetPersistedDefaultAudioEndpoint(processId, dataFlow, role, out string deviceId);
+            PolicyConfigFactory.GetPersistedDefaultAudioEndpoint(processId, dataFlow, role, out string deviceId);
             return deviceId;
         }
     }

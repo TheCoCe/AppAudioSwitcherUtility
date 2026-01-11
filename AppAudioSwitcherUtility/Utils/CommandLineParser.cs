@@ -16,13 +16,12 @@ namespace AppAudioSwitcherUtility.Utils
             _args = args.ToList();
         }
 
-        public string GetStringArgument(string key, char shortKey, out bool found)
+        public string GetStringArgument(string key, char shortKey)
         {
             var index = _args.IndexOf("--" + key);
 
             if (index >= 0 && _args.Count > index)
             {
-                found = true;
                 return _args[index + 1];
             }
 
@@ -30,12 +29,10 @@ namespace AppAudioSwitcherUtility.Utils
 
             if (index >= 0 && _args.Count > index)
             {
-                found = true;
                 return _args[index + 1];
             }
 
-            found = false;
-            return "";
+            return null;
         }
 
         public bool HasStringKey(string key, char shortKey)
