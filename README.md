@@ -19,8 +19,8 @@ The application will always respond with a JSON string in the form:
 
 ```JSON
 {
-    id: "",
-    payload: {}
+    "id": "",
+    "payload": {}
 }
 ```
 
@@ -31,7 +31,7 @@ The application will always respond with a JSON string in the form:
 
 ### Get mode
 
-`AppAudioSwitcherUtility.exe --get <mode-type> [options]` 
+`AppAudioSwitcherUtility.exe --get <mode-type> [options]`
 
 The get mode allows you to retrieve data. When invoked directly it will respond with a JSON string in the stdout.
 You can define what info to retrieve by setting the corresponding `<mode-type>` argument.
@@ -40,7 +40,7 @@ You can define what info to retrieve by setting the corresponding `<mode-type>` 
 
 ##### Devices
 
- `--get devices [--type <type>] [--state <state>]`: Retrieves a list of available audio devices (endpoints)
+`--get devices [--type <type>] [--state <state>]`: Retrieves a list of available audio devices (endpoints)
   - `[--type|-t <type>]` to define the type of devices you are interested in
     - `capture|c`: for capture devices (e.g. microphones)
     - `render|r`: for rendering devices (e.g. speakers)
@@ -96,5 +96,55 @@ Result:
 
 ### Set mode
 
+`AppAudioSwitcherUtility.exe --set <mode-type> [options]`
+
+#### Mode Types:
+
+##### AppDevice
+
+`--set appDevice (--process|-p) <pid> (--device|-d) <did>`: Retrieves a list of available audio devices (endpoints)
+  - `(--process|-p) <pid>` process id of the process to set the device for
+  - `(--device|-d) <did>` id of the device to set for this process, must be the same format as the ids retrieved
+
+**Example:** `AppAudioSwitcherUtility.exe --set appDevice -p 123456 -d "{0.0.0.00000000}.{00000000-0000-0000-0000-000000000000}"`
+
+**Result:** Sets the device for this application.
 
 ## Server Mode
+
+In server mode the application start a TCP server to listen for commands. Commands to the application are sent as UTF8 encoded strings and follow the same format as the arguments to the application. To start the application in server mode you need to start the application with the `--server` option.
+
+`AppAudioSwitcherUtility.exe --server [(--port|-p) <port>]`
+
+If `--port` is not specified, the server will start on `localhost:32122` and wait for a connection.
+
+### Limitations
+
+Server mode is very simple and currently only supports a single connection. When a connection was made it will start listening for arguments sent via TCP.
+
+For example the AppAudioSwitcher communicates via TCP by spawning the app as a child process and then connecting similar to this:
+
+```TypeScript
+const client = new Socket();
+
+client.on("data", (data) => {
+    const JsonObj = JSON.parse(data.toString());
+    switch (JsonObj.id) {
+        case "devices": {
+            // Handle device message here
+            ...
+            break;
+        }
+        case "focused": {
+            // Handle focused process message here
+            ...
+            break;
+        }
+    }
+})
+ 
+client.connect(32122, "127.0.0.1");
+
+client.write("--get devices --type render -s active");
+...
+```
