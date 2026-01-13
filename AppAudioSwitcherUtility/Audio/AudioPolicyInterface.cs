@@ -36,6 +36,10 @@ namespace AppAudioSwitcherUtility.Audio
             out string deviceId);
 
         [PreserveSig]
+        HRESULT GetPersistedDefaultAudioEndpoint(uint processId, EDataFlow flow, ERole role,
+            [Out, MarshalAs(UnmanagedType.Interface)] out IMMDevice endpoint);
+
+        [PreserveSig]
         HRESULT ClearAllPersistedApplicationDefaultEndpoints();
     }
 
@@ -43,6 +47,7 @@ namespace AppAudioSwitcherUtility.Audio
     {
         HRESULT SetPersistedDefaultAudioEndpoint(uint processId, EDataFlow flow, ERole role, IntPtr deviceId);
         HRESULT GetPersistedDefaultAudioEndpoint(uint processId, EDataFlow flow, ERole role, out string deviceId);
+        HRESULT GetPersistedDefaultAudioEndpoint(uint processId, EDataFlow flow, ERole role, out IMMDevice device);
         HRESULT ClearAllPersistedApplicationDefaultEndpoints();
     }
 }

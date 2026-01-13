@@ -41,6 +41,12 @@ namespace AppAudioSwitcherUtility.Audio
             return _factory.GetPersistedDefaultAudioEndpoint(processId, flow, role, out deviceId);
         }
 
+        public HRESULT GetPersistedDefaultAudioEndpoint(uint processId, EDataFlow flow, ERole role,
+            out IMMDevice device)
+        {
+            return _factory.GetPersistedDefaultAudioEndpoint(processId, flow, role, out device);
+        }
+
         public HRESULT SetPersistedDefaultAudioEndpoint(uint processId, EDataFlow flow, ERole role, IntPtr deviceId)
         {
             return _factory.SetPersistedDefaultAudioEndpoint(processId, flow, role, deviceId);

@@ -18,6 +18,21 @@ namespace AppAudioSwitcherUtility.Audio
 
         DeviceState GetState();
     }
+    
+    enum CLSCTX : int
+    {
+        CLSCTX_INPROC_SERVER = 0x1,
+    }
+    
+    public static class IMMDeviceExtensions
+    {
+        public static T Activate<T>(this IMMDevice device)
+        {
+            Guid iid = typeof(T).GUID;
+            device.Activate(ref iid, (uint)CLSCTX.CLSCTX_INPROC_SERVER, IntPtr.Zero, out object ret);
+            return (T)ret;
+        }
+    }
 
     [Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E")]
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]

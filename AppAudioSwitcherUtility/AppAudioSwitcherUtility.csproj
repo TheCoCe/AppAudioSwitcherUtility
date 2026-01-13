@@ -135,6 +135,7 @@
     <Compile Include="Audio\AudioDevice.cs" />
     <Compile Include="Audio\AudioPolicy.cs" />
     <Compile Include="Audio\AudioPolicyInterface.cs" />
+    <Compile Include="Audio\AudioSessionManager.cs" />
     <Compile Include="Audio\IMMDevice.cs" />
     <Compile Include="Audio\InteropTypes.cs" />
     <Compile Include="Audio\PropertyKeys.cs" />

@@ -12,9 +12,6 @@ namespace AppAudioSwitcherUtility
 {
     internal static class Program
     {
-        private static IAudioPolicyConfigFactory _policyConfigFactory;
-        private static IAudioPolicyConfigFactory PolicyConfigFactory => _policyConfigFactory ?? (_policyConfigFactory = new AudioPolicyConfigFactoryImplForDownlevel());
-
         public static int Main(string[] args)
         {
             CommandLineParser commandLineParser = new CommandLineParser(args);
@@ -130,10 +127,10 @@ namespace AppAudioSwitcherUtility
         private static string GetProcessJson()
         {
             uint processId = ProcessUtilities.GetForegroundWindowProcessId();
-            string deviceId = GetPersitedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eMultimedia);
+            string deviceId = AudioDeviceUtils.GetPersitedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eMultimedia);
             if (string.IsNullOrEmpty(deviceId))
             {
-                deviceId = GetPersitedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eConsole);
+                deviceId = AudioDeviceUtils.GetPersitedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eConsole);
             }
 
             return JsonSerializer.Serialize(new
@@ -143,7 +140,8 @@ namespace AppAudioSwitcherUtility
                 {
                     processId = processId.ToString(),
                     processName = ProcessUtilities.GetFriendlyName((int)processId),
-                    deviceId = UnpackDeviceId(deviceId)
+                    deviceId = AudioDeviceUtils.UnpackDeviceId(deviceId),
+                    playsSound = AudioDeviceUtils.CheckProcessForSound(processId, EDataFlow.eRender, ERole.eMultimedia, DeviceState.ACTIVE),
                 }
             });
         }
@@ -152,10 +150,10 @@ namespace AppAudioSwitcherUtility
         {
             uint processId = ProcessUtilities.GetForegroundWindowProcessId();
             string processIconBase64 = ProcessIconExtractor.GetBase64IconFromProcess((int)processId) ?? "";
-            string deviceId = GetPersitedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eMultimedia);
+            string deviceId = AudioDeviceUtils.GetPersitedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eMultimedia);
             if (string.IsNullOrEmpty(deviceId))
             {
-                deviceId = GetPersitedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eConsole);
+                deviceId = AudioDeviceUtils.GetPersitedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eConsole);
             }
             
             return JsonSerializer.Serialize(new
@@ -165,7 +163,8 @@ namespace AppAudioSwitcherUtility
                 {
                     processId = processId.ToString(),
                     processName = ProcessUtilities.GetFriendlyName((int)processId),
-                    deviceId = UnpackDeviceId(deviceId),
+                    deviceId = AudioDeviceUtils.UnpackDeviceId(deviceId),
+                    playsSound = AudioDeviceUtils.CheckProcessForSound(processId, EDataFlow.eRender, ERole.eMultimedia, DeviceState.ACTIVE),
                     processIconBase64
                 }
             });
@@ -205,53 +204,14 @@ namespace AppAudioSwitcherUtility
                     }
 
                     // Lastly try to set the endpoints
-                    bool bConsoleSuccess = SetPersistedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eConsole, device);
-                    bool bMultimediaSuccess = SetPersistedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eMultimedia, device);
+                    bool bConsoleSuccess = AudioDeviceUtils.SetPersistedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eConsole, device);
+                    bool bMultimediaSuccess = AudioDeviceUtils.SetPersistedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eMultimedia, device);
 
                     return bConsoleSuccess || bMultimediaSuccess ? 0 : -1;       
                 }
             }
 
             return -1;
-        }
-
-        private const string DEVINTERFACE_AUDIO_RENDER = "#{e6327cad-dcec-4949-ae8a-991e976a79d2}";
-        private const string DEVINTERFACE_AUDIO_CAPTURE = "#{2eef81be-33fa-4800-9670-1cd474972c3f}";
-        private const string MMDEVAPI_TOKEN = @"\\?\SWD#MMDEVAPI#";
-
-        private static string GenerateDeviceId(string deviceId, EDataFlow dataFlow)
-        {
-            return
-                $"{MMDEVAPI_TOKEN}{deviceId}{(dataFlow == EDataFlow.eRender ? DEVINTERFACE_AUDIO_RENDER : DEVINTERFACE_AUDIO_CAPTURE)}";
-        }
-        
-        private static string UnpackDeviceId(string deviceId)
-        {
-            if(string.IsNullOrEmpty(deviceId)) return deviceId;
-            if (deviceId.StartsWith(MMDEVAPI_TOKEN)) deviceId = deviceId.Remove(0, MMDEVAPI_TOKEN.Length);
-            if (deviceId.EndsWith(DEVINTERFACE_AUDIO_RENDER)) deviceId = deviceId.Remove(deviceId.Length - DEVINTERFACE_AUDIO_RENDER.Length);
-            if (deviceId.EndsWith(DEVINTERFACE_AUDIO_CAPTURE)) deviceId = deviceId.Remove(deviceId.Length - DEVINTERFACE_AUDIO_CAPTURE.Length);
-            return deviceId;
-        }
-
-        private static bool SetPersistedDefaultAudioEndpoint(uint processId, EDataFlow dataFlow, ERole role, string deviceId)
-        {
-            // this crashes due to failed marshalling param, no idea what that means
-            IntPtr hstring = IntPtr.Zero;
-
-            if (!string.IsNullOrEmpty(deviceId))
-            {
-                string str = GenerateDeviceId(deviceId, EDataFlow.eRender);
-                Combase.WindowsCreateString(str, (uint)str.Length, out hstring);
-            }
-
-            return PolicyConfigFactory.SetPersistedDefaultAudioEndpoint(processId, dataFlow, role, hstring) == HRESULT.S_OK;
-        }
-
-        private static string GetPersitedDefaultAudioEndpoint(uint processId, EDataFlow dataFlow, ERole role)
-        {
-            PolicyConfigFactory.GetPersistedDefaultAudioEndpoint(processId, dataFlow, role, out string deviceId);
-            return deviceId;
         }
     }
 }
