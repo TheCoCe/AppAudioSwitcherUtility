@@ -1,8 +1,6 @@
 using System;
-using System.Net;
-using System.Net.Sockets;
-using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 using AppAudioSwitcherUtility.Audio;
 using AppAudioSwitcherUtility.Process;
 using AppAudioSwitcherUtility.Server;
@@ -12,7 +10,7 @@ namespace AppAudioSwitcherUtility
 {
     internal static class Program
     {
-        public static int Main(string[] args)
+        public static async Task<int> Main(string[] args)
         {
             CommandLineParser commandLineParser = new CommandLineParser(args);
             string mode = commandLineParser.GetFirstKey();
@@ -35,42 +33,54 @@ namespace AppAudioSwitcherUtility
                 }
                 case "server":
                 {
-                    int port = 32122;
-                    string portStr = commandLineParser.GetStringArgument("port", 'p');
-                    if (!string.IsNullOrEmpty(portStr))
-                    {
-                        try
-                        {
-                            port = int.Parse(portStr);
-                        }
-                        catch
-                        {
-                            // Fallthrough
-                        }
-                    }
-                    return HandleServerMode(port);
+                    return await HandleServerMode(commandLineParser);
                 }
             }
 
             return 0;
         }
 
-        private static int HandleServerMode(int port)
+        private static async Task<int> HandleServerMode(CommandLineParser parser)
         {
+            int port = 32122;
+            string portStr = parser.GetStringArgument("port", 'p');
+            if (!string.IsNullOrEmpty(portStr))
+            {
+                try
+                {
+                    port = int.Parse(portStr);
+                }
+                catch
+                {
+                    // Ignore
+                }
+            }
+            
             AppAudioSwitcherServer server = new AppAudioSwitcherServer(port);
-            server.MessageReceived += HandleMessageReceived;
-            return server.Run();
+            server.MessageReceived += (message) =>
+            {
+                HandleMessageReceived(server, message);
+            };
+            
+            BackgroundProcessWatcher backgroundProcessWatcher = new BackgroundProcessWatcher();
+            backgroundProcessWatcher.ForegroundProcessChanged += (processId) =>
+            {
+                _ = server.BroadcastMessage(GetProcessJsonWithIcon(processId));
+            };
+            backgroundProcessWatcher.Start();
+            
+            return await server.RunAsync();
         }
 
-        private static void HandleMessageReceived(AppAudioSwitcherServer server, string message)
+        private static void HandleMessageReceived(AppAudioSwitcherServer server, AppAudioSwitcherServer.Request request)
         {
-            if (message.ToLower() == "close")
+            if (request.Message.ToLower() == "close")
             {
                 server.Stop();
                 return;
             }
             
-            string[] args = message.Split(' ');
+            string[] args = request.Message.Split(' ');
             CommandLineParser parser = new CommandLineParser(args);
             
             string mode = parser.GetFirstKey();
@@ -78,7 +88,7 @@ namespace AppAudioSwitcherUtility
             {
                 case "get":
                 {
-                    server.SendMessage(HandleGetCommand(parser));
+                    _ = server.SendMessage(request.Client, HandleGetCommand(parser));
                     break;
                 }
                 case "set":
@@ -124,13 +134,13 @@ namespace AppAudioSwitcherUtility
             });
         }
 
-        private static string GetProcessJson()
+        private static string GetProcessJson(uint? processId = null)
         {
-            uint processId = ProcessUtilities.GetForegroundWindowProcessId();
-            string deviceId = AudioDeviceUtils.GetPersitedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eMultimedia);
+            uint id = processId ?? ProcessUtilities.GetForegroundWindowProcessId();
+            string deviceId = AudioDeviceUtils.GetPersitedDefaultAudioEndpoint(id, EDataFlow.eRender, ERole.eMultimedia);
             if (string.IsNullOrEmpty(deviceId))
             {
-                deviceId = AudioDeviceUtils.GetPersitedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eConsole);
+                deviceId = AudioDeviceUtils.GetPersitedDefaultAudioEndpoint(id, EDataFlow.eRender, ERole.eConsole);
             }
 
             return JsonSerializer.Serialize(new
@@ -139,21 +149,21 @@ namespace AppAudioSwitcherUtility
                 payload = new
                 {
                     processId = processId.ToString(),
-                    processName = ProcessUtilities.GetFriendlyName((int)processId),
+                    processName = ProcessUtilities.GetFriendlyName((int)id),
                     deviceId = AudioDeviceUtils.UnpackDeviceId(deviceId),
-                    playsSound = AudioDeviceUtils.CheckProcessForSound(processId, EDataFlow.eRender, ERole.eMultimedia, DeviceState.ACTIVE),
+                    playsSound = AudioDeviceUtils.CheckProcessForSound(id, EDataFlow.eRender, ERole.eMultimedia, DeviceState.ACTIVE),
                 }
             });
         }
 
-        private static string GetProcessJsonWithIcon()
+        private static string GetProcessJsonWithIcon(uint? processId = null)
         {
-            uint processId = ProcessUtilities.GetForegroundWindowProcessId();
-            string processIconBase64 = ProcessIconExtractor.GetBase64IconFromProcess((int)processId) ?? "";
-            string deviceId = AudioDeviceUtils.GetPersitedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eMultimedia);
+            uint id = processId ?? ProcessUtilities.GetForegroundWindowProcessId();
+            string processIconBase64 = ProcessIconExtractor.GetBase64IconFromProcess((int)id) ?? "";
+            string deviceId = AudioDeviceUtils.GetPersitedDefaultAudioEndpoint(id, EDataFlow.eRender, ERole.eMultimedia);
             if (string.IsNullOrEmpty(deviceId))
             {
-                deviceId = AudioDeviceUtils.GetPersitedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eConsole);
+                deviceId = AudioDeviceUtils.GetPersitedDefaultAudioEndpoint(id, EDataFlow.eRender, ERole.eConsole);
             }
             
             return JsonSerializer.Serialize(new
@@ -161,10 +171,10 @@ namespace AppAudioSwitcherUtility
                 id = "icon",
                 payload = new
                 {
-                    processId = processId.ToString(),
-                    processName = ProcessUtilities.GetFriendlyName((int)processId),
+                    processId = id.ToString(),
+                    processName = ProcessUtilities.GetFriendlyName((int)id),
                     deviceId = AudioDeviceUtils.UnpackDeviceId(deviceId),
-                    playsSound = AudioDeviceUtils.CheckProcessForSound(processId, EDataFlow.eRender, ERole.eMultimedia, DeviceState.ACTIVE),
+                    playsSound = AudioDeviceUtils.CheckProcessForSound(id, EDataFlow.eRender, ERole.eMultimedia, DeviceState.ACTIVE),
                     processIconBase64
                 }
             });

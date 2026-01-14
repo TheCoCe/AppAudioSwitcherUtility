@@ -142,6 +142,7 @@
     <Compile Include="Audio\PropertyStore.cs" />
     <Compile Include="Process\ProcessIconExtractor.cs" />
     <Compile Include="Process\ProcessUtils.cs" />
+    <Compile Include="Process\BackgroundProcessWatcher.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Server\AppAudioSwitcherServer.cs" />
