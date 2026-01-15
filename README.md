@@ -112,7 +112,7 @@ Result:
 
 ## Server Mode
 
-In server mode the application start a TCP server to listen for commands. Commands to the application are sent as UTF8 encoded strings and follow the same format as the arguments to the application. To start the application in server mode you need to start the application with the `--server` option.
+In server mode the application starts a TCP server to listen for commands. Commands to the application are sent as UTF8 encoded strings and follow the same format as the arguments to the application. To start the application in server mode you need to start the application with the `--server` option.
 
 `AppAudioSwitcherUtility.exe --server [(--port|-p) <port>]`
 
