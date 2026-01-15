@@ -1,5 +1,6 @@
 using System;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using AppAudioSwitcherUtility.Audio;
 using AppAudioSwitcherUtility.Process;
@@ -65,7 +66,7 @@ namespace AppAudioSwitcherUtility
             BackgroundProcessWatcher backgroundProcessWatcher = new BackgroundProcessWatcher();
             backgroundProcessWatcher.ForegroundProcessChanged += (processId) =>
             {
-                _ = server.BroadcastMessage(GetProcessJsonWithIcon(processId));
+                _ = server.BroadcastMessage(GetProcessJsonString(true, processId));
             };
             backgroundProcessWatcher.Start();
             
@@ -111,12 +112,12 @@ namespace AppAudioSwitcherUtility
                     string deviceStateStr = parser.GetStringArgument("state", 's');
                     DeviceState deviceState = InteropTypeExtensions.StrToDeviceState(!string.IsNullOrEmpty(deviceStateStr) ? deviceStateStr : "active");
 
-                    string devicesJson = GetDevicesJson(dataFlow, deviceState);
+                    string devicesJson = GetDevicesJsonString(dataFlow, deviceState);
                     return devicesJson;
                 }
                 case "focused":
                 {
-                    string processJson = parser.HasStringKey("icon", 'i') ? GetProcessJsonWithIcon() : GetProcessJson();
+                    string processJson = GetProcessJsonString(parser.HasStringKey("icon", 'i'));
                     return processJson;
                 }
                 default:
@@ -124,7 +125,7 @@ namespace AppAudioSwitcherUtility
             }
         }
 
-        private static string GetDevicesJson(EDataFlow dataFlow, DeviceState state)
+        private static string GetDevicesJsonString(EDataFlow dataFlow, DeviceState state)
         {
             AudioDevice[] devices = AudioDeviceUtils.GetAudioDevices(dataFlow, state);
             return JsonSerializer.Serialize(new
@@ -134,7 +135,7 @@ namespace AppAudioSwitcherUtility
             });
         }
 
-        private static string GetProcessJson(uint? processId = null)
+        private static string GetProcessJsonString(bool includeIcon, uint? processId = null)
         {
             uint id = processId ?? ProcessUtilities.GetForegroundWindowProcessId();
             string deviceId = AudioDeviceUtils.GetPersitedDefaultAudioEndpoint(id, EDataFlow.eRender, ERole.eMultimedia);
@@ -143,40 +144,23 @@ namespace AppAudioSwitcherUtility
                 deviceId = AudioDeviceUtils.GetPersitedDefaultAudioEndpoint(id, EDataFlow.eRender, ERole.eConsole);
             }
 
-            return JsonSerializer.Serialize(new
+            JsonObject payload = new JsonObject
             {
-                id = "focused",
-                payload = new
-                {
-                    processId = processId.ToString(),
-                    processName = ProcessUtilities.GetFriendlyName((int)id),
-                    deviceId = AudioDeviceUtils.UnpackDeviceId(deviceId),
-                    playsSound = AudioDeviceUtils.CheckProcessForSound(id, EDataFlow.eRender, ERole.eMultimedia, DeviceState.ACTIVE),
-                }
-            });
-        }
+                ["processId"] = id.ToString(),
+                ["processName"] = ProcessUtilities.GetFriendlyName((int)id),
+                ["deviceId"] = AudioDeviceUtils.UnpackDeviceId(deviceId),
+                ["playsSound"] = AudioDeviceUtils.CheckProcessForSound(id, EDataFlow.eRender, ERole.eMultimedia, DeviceState.ACTIVE),
+            };
 
-        private static string GetProcessJsonWithIcon(uint? processId = null)
-        {
-            uint id = processId ?? ProcessUtilities.GetForegroundWindowProcessId();
-            string processIconBase64 = ProcessIconExtractor.GetBase64IconFromProcess((int)id) ?? "";
-            string deviceId = AudioDeviceUtils.GetPersitedDefaultAudioEndpoint(id, EDataFlow.eRender, ERole.eMultimedia);
-            if (string.IsNullOrEmpty(deviceId))
+            if (includeIcon)
             {
-                deviceId = AudioDeviceUtils.GetPersitedDefaultAudioEndpoint(id, EDataFlow.eRender, ERole.eConsole);
+                payload["processIconBase64"] = ProcessIconExtractor.GetBase64IconFromProcess((int)id) ?? "";
             }
             
             return JsonSerializer.Serialize(new
             {
-                id = "icon",
-                payload = new
-                {
-                    processId = id.ToString(),
-                    processName = ProcessUtilities.GetFriendlyName((int)id),
-                    deviceId = AudioDeviceUtils.UnpackDeviceId(deviceId),
-                    playsSound = AudioDeviceUtils.CheckProcessForSound(id, EDataFlow.eRender, ERole.eMultimedia, DeviceState.ACTIVE),
-                    processIconBase64
-                }
+                id = "focused",
+                payload
             });
         }
 

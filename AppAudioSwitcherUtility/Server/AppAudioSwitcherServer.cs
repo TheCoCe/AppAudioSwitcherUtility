@@ -167,6 +167,7 @@ namespace AppAudioSwitcherUtility.Server
             try
             {
                 NetworkStream stream = client.GetStream();
+                Console.WriteLine("Sending message to {0}: {1}", client.Client.RemoteEndPoint, message);
                 byte[] buffer = Encoding.UTF8.GetBytes(message);
                 await stream.WriteAsync(buffer, 0, buffer.Length, _cts.Token);
             }

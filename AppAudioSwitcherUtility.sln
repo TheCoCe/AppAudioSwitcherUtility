@@ -5,6 +5,8 @@ VisualStudioVersion = 17.14.36811.4 d17.14
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AppAudioSwitcherUtility", "AppAudioSwitcherUtility\AppAudioSwitcherUtility.csproj", "{451A5E89-224C-4FB3-B817-73E1940AEEC8}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AppAudioSwitcherTestClient", "AppAudioSwitcherTestClient\AppAudioSwitcherTestClient.csproj", "{B69A36F4-1C86-4048-8A56-2E1A786BC8A8}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,14 @@ Global
 		{451A5E89-224C-4FB3-B817-73E1940AEEC8}.Release|Any CPU.Build.0 = Release|Any CPU
 		{451A5E89-224C-4FB3-B817-73E1940AEEC8}.Release|x64.ActiveCfg = Release|x64
 		{451A5E89-224C-4FB3-B817-73E1940AEEC8}.Release|x64.Build.0 = Release|x64
+		{B69A36F4-1C86-4048-8A56-2E1A786BC8A8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B69A36F4-1C86-4048-8A56-2E1A786BC8A8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B69A36F4-1C86-4048-8A56-2E1A786BC8A8}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{B69A36F4-1C86-4048-8A56-2E1A786BC8A8}.Debug|x64.Build.0 = Debug|Any CPU
+		{B69A36F4-1C86-4048-8A56-2E1A786BC8A8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B69A36F4-1C86-4048-8A56-2E1A786BC8A8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B69A36F4-1C86-4048-8A56-2E1A786BC8A8}.Release|x64.ActiveCfg = Release|Any CPU
+		{B69A36F4-1C86-4048-8A56-2E1A786BC8A8}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
