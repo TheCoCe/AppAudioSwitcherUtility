@@ -118,11 +118,8 @@ In server mode the application start a TCP server to listen for commands. Comman
 
 If `--port` is not specified, the server will start on `localhost:32122` and wait for a connection.
 
-### Limitations
-
-Server mode is very simple and currently only supports a single connection. When a connection was made it will start listening for arguments sent via TCP.
-
-For example the AppAudioSwitcher communicates via TCP by spawning the app as a child process and then connecting similar to this:
+### Example
+The AppAudioSwitcher StreamDeck plugin communicates via TCP by spawning the app as a child process and then connecting similar to this:
 
 ```TypeScript
 const client = new Socket();
