@@ -11,10 +11,15 @@ namespace AppAudioSwitcherUtility
 {
     internal static class Program
     {
+        private static AudioDeviceManager _deviceManager;
+        
         public static async Task<int> Main(string[] args)
         {
             CommandLineParser commandLineParser = new CommandLineParser(args);
             string mode = commandLineParser.GetFirstKey();
+            
+            _deviceManager = new AudioDeviceManager();
+            
             switch (mode)
             {
                 case "get":
@@ -70,6 +75,28 @@ namespace AppAudioSwitcherUtility
             };
             backgroundProcessWatcher.Start();
             
+            AudioDeviceManager.DeviceDelegate devicesChanged = (device, flow) =>
+            {
+                Console.WriteLine($"Device changed: {device.Id}");
+                _ = server.BroadcastMessage(GetDevicesJsonString(device.Flow));
+            };
+
+            _deviceManager.DeviceAdded += devicesChanged;
+            _deviceManager.DeviceRemoved += devicesChanged;
+
+            AudioDevice.SessionDelegate sessionChanged = (device, session) =>
+            {
+                Console.WriteLine($"Session changed for process {session.ProcessId} on device {device.Id}");
+                if (session.ProcessId == backgroundProcessWatcher.CurrentForegroundProcessId)
+                {
+                    Console.WriteLine($"Session changed for foreground process: {backgroundProcessWatcher.CurrentForegroundProcessId}");
+                    _ = server.BroadcastMessage(GetProcessJsonString(false, backgroundProcessWatcher.CurrentForegroundProcessId));
+                }
+            };
+            
+            _deviceManager.SessionAdded += sessionChanged;
+            _deviceManager.SessionRemoved += sessionChanged;
+            
             return await server.RunAsync();
         }
 
@@ -109,10 +136,8 @@ namespace AppAudioSwitcherUtility
                 {
                     string dataFlowStr = parser.GetStringArgument("type", 't');
                     EDataFlow dataFlow = InteropTypeExtensions.StrToDataFlow(!string.IsNullOrEmpty(dataFlowStr) ? dataFlowStr : "render");
-                    string deviceStateStr = parser.GetStringArgument("state", 's');
-                    DeviceState deviceState = InteropTypeExtensions.StrToDeviceState(!string.IsNullOrEmpty(deviceStateStr) ? deviceStateStr : "active");
 
-                    string devicesJson = GetDevicesJsonString(dataFlow, deviceState);
+                    string devicesJson = GetDevicesJsonString(dataFlow);
                     return devicesJson;
                 }
                 case "focused":
@@ -125,31 +150,30 @@ namespace AppAudioSwitcherUtility
             }
         }
 
-        private static string GetDevicesJsonString(EDataFlow dataFlow, DeviceState state)
+        private static string GetDevicesJsonString(EDataFlow dataFlow)
         {
-            AudioDevice[] devices = AudioDeviceUtils.GetAudioDevices(dataFlow, state);
             return JsonSerializer.Serialize(new
             {
                 id = "devices", 
-                payload = new { devices } 
+                payload = _deviceManager.GetAudioDeviceInfo(dataFlow)
             });
         }
 
         private static string GetProcessJsonString(bool includeIcon, uint? processId = null)
         {
             uint id = processId ?? ProcessUtilities.GetForegroundWindowProcessId();
-            string deviceId = AudioDeviceUtils.GetPersitedDefaultAudioEndpoint(id, EDataFlow.eRender, ERole.eMultimedia);
+            string deviceId = _deviceManager.GetPersitedDefaultAudioEndpoint(id, EDataFlow.eRender, ERole.eMultimedia);
             if (string.IsNullOrEmpty(deviceId))
             {
-                deviceId = AudioDeviceUtils.GetPersitedDefaultAudioEndpoint(id, EDataFlow.eRender, ERole.eConsole);
+                deviceId = _deviceManager.GetPersitedDefaultAudioEndpoint(id, EDataFlow.eRender, ERole.eConsole);
             }
 
             JsonObject payload = new JsonObject
             {
                 ["processId"] = id.ToString(),
                 ["processName"] = ProcessUtilities.GetFriendlyName((int)id),
-                ["deviceId"] = AudioDeviceUtils.UnpackDeviceId(deviceId),
-                ["playsSound"] = AudioDeviceUtils.CheckProcessForSound(id, EDataFlow.eRender, ERole.eMultimedia, DeviceState.ACTIVE),
+                ["deviceId"] = AudioDeviceManager.UnpackDeviceId(deviceId),
+                ["hasSession"] = _deviceManager.HasSession((int)id)
             };
 
             if (includeIcon)
@@ -198,8 +222,8 @@ namespace AppAudioSwitcherUtility
                     }
 
                     // Lastly try to set the endpoints
-                    bool bConsoleSuccess = AudioDeviceUtils.SetPersistedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eConsole, device);
-                    bool bMultimediaSuccess = AudioDeviceUtils.SetPersistedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eMultimedia, device);
+                    bool bConsoleSuccess = _deviceManager.SetPersistedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eConsole, device);
+                    bool bMultimediaSuccess = _deviceManager.SetPersistedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eMultimedia, device);
 
                     return bConsoleSuccess || bMultimediaSuccess ? 0 : -1;       
                 }

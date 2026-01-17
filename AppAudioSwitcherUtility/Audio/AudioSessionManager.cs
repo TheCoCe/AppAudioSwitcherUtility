@@ -1,16 +1,19 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace AppAudioSwitcherUtility.Audio
 {
-    enum AudioSessionState
+    public enum AudioSessionState
     {
         Inactive = 0,
         Active = 1,
         Expired = 2
     }
-    
-    enum AudioSessionDisconnectReason
+
+    public enum AudioSessionDisconnectReason
     {
         DeviceRemoval = 0,
         ServerShutdown = 1,
@@ -22,7 +25,7 @@ namespace AppAudioSwitcherUtility.Audio
     
     [Guid("24918ACC-64B3-37C1-8CA9-74A66E9957A8")]
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    interface IAudioSessionEvents
+    public interface IAudioSessionEvents
     {
         void OnDisplayNameChanged([MarshalAs(UnmanagedType.LPWStr)]string NewDisplayName, ref Guid EventContext);
         void OnIconPathChanged([MarshalAs(UnmanagedType.LPWStr)]string NewIconPath, ref Guid EventContext);
@@ -35,7 +38,7 @@ namespace AppAudioSwitcherUtility.Audio
     
     [Guid("F4B1A599-7266-4319-A8CA-E70ACB11E8CD")]
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    interface IAudioSessionControl
+    public interface IAudioSessionControl
     {
         AudioSessionState GetState();
         [return: MarshalAs(UnmanagedType.LPWStr)]
@@ -118,5 +121,83 @@ namespace AppAudioSwitcherUtility.Audio
         [PreserveSig]
         HRESULT IsSystemSoundsSession();
         void SetDuckingPreference(int optOut);
+    }
+
+    public class AudioDeviceSession : IAudioSessionEvents, INotifyPropertyChanged
+    {
+        private readonly string _id;
+        private readonly IAudioSessionControl _session;
+        private AudioSessionState _state;
+        private bool _isDisconnected;
+        private bool _isRegistered;
+
+        public AudioDeviceSession(IAudioSessionControl session)
+        {
+            _session = session;
+            IsSystemSoundsSession = ((IAudioSessionControl2)_session).IsSystemSoundsSession() == HRESULT.S_OK;
+            ProcessId = ReadProcessId();
+            
+            _session.RegisterAudioSessionNotification(this);
+            _isRegistered = true;
+            ((IAudioSessionControl2)_session).GetSessionInstanceIdentifier(out _id);
+        }
+
+        ~AudioDeviceSession()
+        {
+            try
+            {
+                if (_isRegistered)
+                {
+                    _session.UnregisterAudioSessionNotification(this);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Failed to unregister session events: {ex}");
+            }
+        }
+        
+        public string Id => _id;
+        public int ProcessId { get; }
+        public bool IsSystemSoundsSession { get; }
+        public AudioSessionState State => _isDisconnected ? AudioSessionState.Expired : _state;
+
+        private int ReadProcessId()
+        {
+            int hr = ((IAudioSessionControl2)_session).GetProcessId(out uint pid);
+            if (hr == (int)HRESULT.AUDCLNT_S_NO_SINGLE_PROCESS ||
+                hr == (int)HRESULT.S_OK)
+            {
+                // See ear trumpet AudioDeviceSession.cs for explanation of this
+                return IsSystemSoundsSession ? 0 : (int)pid;
+            }
+
+            throw Marshal.GetExceptionForHR(hr);
+        }
+        
+        public void OnDisplayNameChanged(string newDisplayName, ref Guid eventContext) {}
+        public void OnIconPathChanged(string newIconPath, ref Guid eventContext) {}
+        public void OnSimpleVolumeChanged(float newVolume, int newMute, ref Guid eventContext) {}
+        public void OnChannelVolumeChanged(uint channelCount, IntPtr afNewChannelVolume, uint changedChannel, ref Guid eventContext) {}
+        public void OnGroupingParamChanged(ref Guid newGroupingParam, ref Guid eventContext) {}
+
+        public void OnStateChanged(AudioSessionState newState)
+        {
+            _state = newState;
+            RaisePropertyChanged(nameof(State));
+        }
+
+        public void OnSessionDisconnected(AudioSessionDisconnectReason disconnectReason)
+        {
+            _isDisconnected = true;
+            RaisePropertyChanged(nameof(State));
+        }
+
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        private void RaisePropertyChanged(string propertyName)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
     }
 }

@@ -19,6 +19,13 @@ namespace AppAudioSwitcherUtility.Audio
         DeviceState GetState();
     }
     
+    [Guid("1BE09788-6894-4089-8586-9A2A6C265AC5")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IMMEndpoint
+    {
+        EDataFlow GetDataFlow();
+    }
+    
     enum CLSCTX : int
     {
         CLSCTX_INPROC_SERVER = 0x1,
@@ -43,6 +50,17 @@ namespace AppAudioSwitcherUtility.Audio
         [return: MarshalAs(UnmanagedType.Interface)]
         IMMDevice Item(uint nDevice);
     }
+    
+    [Guid("7991EEC9-7E89-4D85-8390-6C703CEC60C0")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    public interface IMMNotificationClient
+    {
+        void OnDeviceStateChanged([MarshalAs(UnmanagedType.LPWStr)]string pwstrDeviceId, DeviceState dwNewState);
+        void OnDeviceAdded([MarshalAs(UnmanagedType.LPWStr)]string pwstrDeviceId);
+        void OnDeviceRemoved([MarshalAs(UnmanagedType.LPWStr)]string pwstrDeviceId);
+        void OnDefaultDeviceChanged(EDataFlow flow, ERole role, [MarshalAs(UnmanagedType.LPWStr)]string pwstrDefaultDeviceId);
+        void OnPropertyValueChanged([MarshalAs(UnmanagedType.LPWStr)]string pwstrDeviceId, PROPERTYKEY key);
+    }
 
     [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6")]
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -50,6 +68,13 @@ namespace AppAudioSwitcherUtility.Audio
     {
         [return: MarshalAs(UnmanagedType.Interface)]
         IMMDeviceCollection EnumAudioEndpoints(EDataFlow dataFlow, DeviceState dwStateMask);
+        [return: MarshalAs(UnmanagedType.Interface)]
+        IMMDevice GetDefaultAudioEndpoint(EDataFlow dataFlow, ERole role);
+        [return: MarshalAs(UnmanagedType.Interface)]
+        IMMDevice GetDevice([MarshalAs(UnmanagedType.LPWStr)]string pwstrId);
+        void RegisterEndpointNotificationCallback([MarshalAs(UnmanagedType.Interface)] IMMNotificationClient pClient);
+        void UnregisterEndpointNotificationCallback([MarshalAs(UnmanagedType.Interface)] IMMNotificationClient pClient);
+
     }
 
     [ComImport]

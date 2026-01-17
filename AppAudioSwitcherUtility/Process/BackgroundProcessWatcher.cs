@@ -9,9 +9,22 @@ namespace AppAudioSwitcherUtility.Process
         private Thread _watcherThread;
         private IntPtr _hook;
         private bool _running;
+        private System.Timers.Timer _timer;
 
         // Delegate
         private WinEventDelegate _callback;
+        private volatile uint _currentForegroundProcessId = 0;
+
+        public uint CurrentForegroundProcessId
+        {
+            get => _currentForegroundProcessId;
+            private set
+            {
+                _currentForegroundProcessId = value;
+                Console.WriteLine($"Forground process changed to: {_currentForegroundProcessId}");
+                ForegroundProcessChanged?.Invoke(_currentForegroundProcessId);
+            }
+        }
 
         // WinEvent constants
         private const uint EVENT_SYSTEM_FOREGROUND = 3;
@@ -59,7 +72,13 @@ namespace AppAudioSwitcherUtility.Process
 
         private void Listen()
         {
-            _callback = Callback;
+            _timer = new System.Timers.Timer();
+            _timer.Interval = 1000 * 10;
+            _timer.AutoReset = true;
+            _timer.Elapsed += OnFocusedTimerElapsed;
+            _timer.Start();
+            
+            _callback = WinHookEventCallback;
             _hook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, IntPtr.Zero, _callback, 0, 0, WINEVENT_OUTOFCONTEXT);
 
             if (_hook == IntPtr.Zero)
@@ -73,16 +92,25 @@ namespace AppAudioSwitcherUtility.Process
             }
         }
 
-        private void Callback(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild,
+        private void WinHookEventCallback(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild,
             uint dwEventThread, uint dwmsEventTime)
         {
             ProcessUtilities.GetWindowThreadProcessId(hwnd, out uint processId);
-            ForegroundProcessChanged?.Invoke(processId);
+            CurrentForegroundProcessId = processId;
+        }
+
+        private void OnFocusedTimerElapsed(object sender, System.Timers.ElapsedEventArgs e)
+        {
+            uint curProcessId = ProcessUtilities.GetForegroundWindowProcessId();
+            if (curProcessId == CurrentForegroundProcessId) return;
+            CurrentForegroundProcessId = curProcessId;
         }
 
         public void Dispose()
         {
             _running = false;
+            _timer.Stop();
+            _timer.Dispose();
 
             if (_hook != IntPtr.Zero)
             {
