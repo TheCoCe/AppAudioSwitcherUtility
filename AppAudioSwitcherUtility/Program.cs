@@ -15,11 +15,13 @@ namespace AppAudioSwitcherUtility
         
         public static async Task<int> Main(string[] args)
         {
+            FileLogger.Init();
             CommandLineParser commandLineParser = new CommandLineParser(args);
             string mode = commandLineParser.GetFirstKey();
             
             _deviceManager = new AudioDeviceManager();
             
+            FileLogger.LogInfo($"Starting in mode {mode}");
             switch (mode)
             {
                 case "get":
@@ -77,7 +79,7 @@ namespace AppAudioSwitcherUtility
             
             AudioDeviceManager.DeviceDelegate devicesChanged = (device, flow) =>
             {
-                Console.WriteLine($"Device changed: {device.Id}");
+                FileLogger.LogInfo($"Device changed: {device.Id}");
                 _ = server.BroadcastMessage(GetDevicesJsonString(device.Flow));
             };
 
@@ -86,12 +88,10 @@ namespace AppAudioSwitcherUtility
 
             AudioDevice.SessionDelegate sessionChanged = (device, session) =>
             {
-                Console.WriteLine($"Session changed for process {session.ProcessId} on device {device.Id}");
-                if (session.ProcessId == backgroundProcessWatcher.CurrentForegroundProcessId)
-                {
-                    Console.WriteLine($"Session changed for foreground process: {backgroundProcessWatcher.CurrentForegroundProcessId}");
-                    _ = server.BroadcastMessage(GetProcessJsonString(false, backgroundProcessWatcher.CurrentForegroundProcessId));
-                }
+                FileLogger.LogInfo($"Session changed for process {session.ProcessId} on device {device.Id}");
+                if (session.ProcessId != backgroundProcessWatcher.CurrentForegroundProcessId) return;
+                FileLogger.LogInfo($"Session changed for foreground process: {backgroundProcessWatcher.CurrentForegroundProcessId}");
+                _ = server.BroadcastMessage(GetProcessJsonString(false, backgroundProcessWatcher.CurrentForegroundProcessId));
             };
             
             _deviceManager.SessionAdded += sessionChanged;
@@ -102,6 +102,7 @@ namespace AppAudioSwitcherUtility
 
         private static void HandleMessageReceived(AppAudioSwitcherServer server, AppAudioSwitcherServer.Request request)
         {
+            FileLogger.LogInfo($"Message received from client {request.Client.Client.RemoteEndPoint}: {request.Message} ");
             if (request.Message.ToLower() == "close")
             {
                 server.Stop();
@@ -135,9 +136,12 @@ namespace AppAudioSwitcherUtility
                 case "devices":
                 {
                     string dataFlowStr = parser.GetStringArgument("type", 't');
+                    FileLogger.LogDebug($"Parsing device type argument: {dataFlowStr}");
                     EDataFlow dataFlow = InteropTypeExtensions.StrToDataFlow(!string.IsNullOrEmpty(dataFlowStr) ? dataFlowStr : "render");
+                    FileLogger.LogDebug($"Resulting data flow: {dataFlow}");
 
                     string devicesJson = GetDevicesJsonString(dataFlow);
+                    FileLogger.LogDebug($"Device json string: {devicesJson}");
                     return devicesJson;
                 }
                 case "focused":
@@ -191,6 +195,7 @@ namespace AppAudioSwitcherUtility
         private static int HandleSetCommand(CommandLineParser parser)
         {
             string mode = parser.GetStringArgument("set", 's');
+            FileLogger.LogInfo($"Handling set command: {mode}");
             switch (mode)
             {
                 case "appDevice":
@@ -210,7 +215,7 @@ namespace AppAudioSwitcherUtility
                     }
                     catch (Exception e)
                     {
-                        Console.WriteLine("Failed to parse process id as uint: {0}\n{1}", processStr, e.Message);
+                        FileLogger.LogError($"Failed to parse process id as uint: {processStr}\n{e.Message}");
                         return -1;
                     }
 
@@ -220,7 +225,7 @@ namespace AppAudioSwitcherUtility
                     {
                         return -1;
                     }
-
+                    
                     // Lastly try to set the endpoints
                     bool bConsoleSuccess = _deviceManager.SetPersistedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eConsole, device);
                     bool bMultimediaSuccess = _deviceManager.SetPersistedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eMultimedia, device);

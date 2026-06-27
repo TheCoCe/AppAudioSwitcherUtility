@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Runtime.InteropServices;
 using System.Threading;
+using AppAudioSwitcherUtility.Utils;
 
 namespace AppAudioSwitcherUtility.Process
 {
@@ -21,7 +22,7 @@ namespace AppAudioSwitcherUtility.Process
             private set
             {
                 _currentForegroundProcessId = value;
-                Console.WriteLine($"Forground process changed to: {_currentForegroundProcessId}");
+                FileLogger.LogInfo($"Foreground process changed to: {_currentForegroundProcessId}");
                 ForegroundProcessChanged?.Invoke(_currentForegroundProcessId);
             }
         }
@@ -72,6 +73,7 @@ namespace AppAudioSwitcherUtility.Process
 
         private void Listen()
         {
+            FileLogger.LogInfo("Background process watcher starting");
             _timer = new System.Timers.Timer();
             _timer.Interval = 1000 * 10;
             _timer.AutoReset = true;

@@ -7,6 +7,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using AppAudioSwitcherUtility.Utils;
 
 namespace AppAudioSwitcherUtility.Server
 {
@@ -23,7 +24,9 @@ namespace AppAudioSwitcherUtility.Server
             public TcpClient Client { get; }
             public string Message { get; }
         }
-        
+
+        private const char Delimiter = '\0';
+
         public delegate void MessageReceivedDelegate(Request request);
 
         public event MessageReceivedDelegate MessageReceived;
@@ -47,7 +50,7 @@ namespace AppAudioSwitcherUtility.Server
         public async Task<int> RunAsync()
         {
             _listener.Start();
-            Console.WriteLine("Listening on port {0}", ((IPEndPoint)_listener.LocalEndpoint).Port);
+            FileLogger.LogInfo($"Listening on port {((IPEndPoint)_listener.LocalEndpoint).Port}");
 
             while (!_cts.IsCancellationRequested)
             {
@@ -77,8 +80,8 @@ namespace AppAudioSwitcherUtility.Server
             
             _ = HandleClientAsync(client, _cts.Token);
 
-            Console.WriteLine($"Client {client.Client.RemoteEndPoint} connected");
-            Console.WriteLine($"Num connected clients: {numClients}");
+            FileLogger.LogInfo($"Client {client.Client.RemoteEndPoint} connected");
+            FileLogger.LogInfo($"Num connected clients: {numClients}");
         }
 
         private void RemoveClient(TcpClient client)
@@ -93,8 +96,8 @@ namespace AppAudioSwitcherUtility.Server
             }
             
             client.Close();
-            Console.WriteLine("Client disconnected");
-            Console.WriteLine($"Num connected clients: {numClients}");
+            FileLogger.LogInfo("Client disconnected");
+            FileLogger.LogInfo($"Num connected clients: {numClients}");
         }
 
         private async Task HandleClientAsync(TcpClient client, CancellationToken ctsToken)
@@ -104,6 +107,8 @@ namespace AppAudioSwitcherUtility.Server
                 using (NetworkStream stream = client.GetStream())
                 {
                     byte[] buffer = new byte[1024];
+                    List<byte> rollingBuffer = new List<byte>(2048);
+                    
                     while (!ctsToken.IsCancellationRequested)
                     {
                         int bytesRead = 0;
@@ -111,14 +116,12 @@ namespace AppAudioSwitcherUtility.Server
                         {
                             bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length, ctsToken);
                         }
-                        catch (Exception ex) when (ex is IOException || ex is SocketException ||
-                                                   ex is ObjectDisposedException)
-                        {
-                            break;
-                        }
+                        catch (IOException) { break; }
+                        catch (SocketException)  { break; }
+                        catch (ObjectDisposedException) { break; }
                         catch (Exception ex)
                         {
-                            Console.WriteLine("Unexpected exception occured while reading stream: {0}", ex);
+                            FileLogger.LogError($"Unexpected exception occured while reading stream: {ex}");
                             break;
                         }
 
@@ -127,8 +130,19 @@ namespace AppAudioSwitcherUtility.Server
                             break;
                         }
 
-                        string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-                        MessageReceived?.Invoke(new Request(client, message));
+                        for (int i = 0; i < bytesRead; i++)
+                        {
+                            if (buffer[i] == 0)
+                            {
+                                string message = Encoding.UTF8.GetString(rollingBuffer.ToArray());
+                                MessageReceived?.Invoke(new Request(client, message));
+                                rollingBuffer.Clear();
+                            }
+                            else
+                            {
+                                rollingBuffer.Add(buffer[i]);
+                            }
+                        }
                     }
                 }
             }
@@ -140,6 +154,7 @@ namespace AppAudioSwitcherUtility.Server
 
         public void Stop()
         {
+            FileLogger.LogInfo("Stopping server...");
             _cts.Cancel();
             _listener.Stop();
 
@@ -166,14 +181,18 @@ namespace AppAudioSwitcherUtility.Server
             if (client == null || !client.Connected) return;
             try
             {
+                if (message.Length == 0 || message[message.Length - 1] != Delimiter)
+                {
+                    message += Delimiter;
+                }
                 NetworkStream stream = client.GetStream();
-                Console.WriteLine("Sending message to {0}: {1}", client.Client.RemoteEndPoint, message);
+                FileLogger.LogInfo($"Sending message to {client.Client.RemoteEndPoint}: {message}");
                 byte[] buffer = Encoding.UTF8.GetBytes(message);
                 await stream.WriteAsync(buffer, 0, buffer.Length, _cts.Token);
             }
             catch (Exception ex)
             {
-                Console.WriteLine(ex.Message);
+                FileLogger.LogError($"Send Message failed trying to send message {message} to {client.Client.RemoteEndPoint}: {ex}");
             }
         }
         

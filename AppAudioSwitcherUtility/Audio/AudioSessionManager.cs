@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using AppAudioSwitcherUtility.Utils;
 
 namespace AppAudioSwitcherUtility.Audio
 {
@@ -153,7 +154,7 @@ namespace AppAudioSwitcherUtility.Audio
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Failed to unregister session events: {ex}");
+                FileLogger.LogError($"Failed to unregister session events: {ex}");
             }
         }
         

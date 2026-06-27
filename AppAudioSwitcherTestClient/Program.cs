@@ -26,7 +26,9 @@ public class AppAudioSwitcherTestClient
         using (_client)
         using (NetworkStream stream = _client.GetStream())
         {
-            byte[] buffer = new byte[4096];
+            byte[] buffer = new byte[1024];
+            List<byte> rollingBuffer = new List<byte>(2048);
+            
             while (!_cts.Token.IsCancellationRequested)
             {
                 int bytesRead = 0;
@@ -34,14 +36,11 @@ public class AppAudioSwitcherTestClient
                 {
                     bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length, _cts.Token);
                 }
-                catch (Exception ex) when (ex is IOException || ex is SocketException ||
-                                           ex is ObjectDisposedException)
-                {
-                    break;
-                }
+                catch (IOException) { break; }
+                catch (SocketException)  { break; }
+                catch (ObjectDisposedException) { break; }
                 catch (Exception ex)
                 {
-                    Console.WriteLine("Unexpected exception occured while reading stream: {0}", ex);
                     break;
                 }
 
@@ -49,9 +48,21 @@ public class AppAudioSwitcherTestClient
                 {
                     break;
                 }
+                
+                for (int i = 0; i < bytesRead; i++)
+                {
+                    if (buffer[i] == 0)
+                    {
+                        string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+                        Console.WriteLine("Received message:\n{0}", message);
+                        rollingBuffer.Clear();
+                    }
+                    else
+                    {
+                        rollingBuffer.Add(buffer[i]);
+                    }
+                }
 
-                string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-                Console.WriteLine("Received message:\n{0}", message);
             }
         }
     }
@@ -84,6 +95,10 @@ public class AppAudioSwitcherTestClient
                         break;
                     }
 
+                    if (!msg.EndsWith('\0'))
+                    {
+                        msg += '\0';
+                    }
                     byte[] buffer = Encoding.UTF8.GetBytes(msg);
                     await stream.WriteAsync(buffer, _cts.Token);
                 }

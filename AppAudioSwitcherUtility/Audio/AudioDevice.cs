@@ -5,6 +5,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
 using System.Text.Json.Nodes;
+using AppAudioSwitcherUtility.Utils;
 
 namespace AppAudioSwitcherUtility.Audio
 {
@@ -28,6 +29,7 @@ namespace AppAudioSwitcherUtility.Audio
 
         public AudioDeviceManager()
         {
+            FileLogger.LogInfo("Initializing audio device manager");
             _policyConfigFactory = new AudioPolicyConfigFactoryImplForDownlevel();
 
             try
@@ -40,7 +42,7 @@ namespace AppAudioSwitcherUtility.Audio
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Failed to initialize audio device manager: {ex.Message}");
+                FileLogger.LogError($"Failed to initialize audio device manager: {ex.Message}");
             }
         }
 
@@ -52,7 +54,7 @@ namespace AppAudioSwitcherUtility.Audio
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Failed to uninitialize audio device manager {ex}");
+                FileLogger.LogError($"Failed to initialize audio device manager: {ex}");
             }
         }
 
@@ -96,7 +98,7 @@ namespace AppAudioSwitcherUtility.Audio
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine(ex.Message);
+                FileLogger.LogError(ex.Message);
             }
         }
 
@@ -138,7 +140,7 @@ namespace AppAudioSwitcherUtility.Audio
                 newDevice.SessionRemoved += (device1, session) => { SessionRemoved?.Invoke(newDevice, session); };
                 DeviceAdded?.Invoke(newDevice, flow);
                 audioDevice = newDevice;
-                Console.WriteLine($"New device added: {newDevice.Name} - {newDevice.Id}");
+                FileLogger.LogInfo($"New device added: {newDevice.Name} - {newDevice.Id}");
                 return true;
             }
 
@@ -210,8 +212,10 @@ namespace AppAudioSwitcherUtility.Audio
                 Combase.WindowsCreateString(str, (uint)str.Length, out hstring);
             }
 
-            return _policyConfigFactory.SetPersistedDefaultAudioEndpoint(processId, dataFlow, role, hstring) ==
-                   HRESULT.S_OK;
+            bool bResult = _policyConfigFactory.SetPersistedDefaultAudioEndpoint(processId, dataFlow, role, hstring) ==
+                                 HRESULT.S_OK;
+            FileLogger.Log(bResult ? FileLogger.LogLevel.Info : FileLogger.LogLevel.Warning, $"SetPersistedDefaultAudioEndpoint ({dataFlow}, {role}) of process {processId} to device {deviceId} {(bResult ? "successful" : "failed")}");
+            return bResult;
         }
 
         public string GetPersitedDefaultAudioEndpoint(uint processId, EDataFlow dataFlow, ERole role)
@@ -282,7 +286,7 @@ namespace AppAudioSwitcherUtility.Audio
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine(ex.Message);
+                FileLogger.LogError(ex.Message);
             }
         }
 
@@ -295,7 +299,7 @@ namespace AppAudioSwitcherUtility.Audio
             Collection<AudioDeviceSession> collection =
                 _sessions.GetOrAdd(newSession.ProcessId, (key) => new Collection<AudioDeviceSession>());
             collection.Add(newSession);
-            Console.WriteLine($"Session created: {newSession.Id} for process: {newSession.ProcessId}");
+            FileLogger.LogInfo($"Session created: {newSession.Id} for process: {newSession.ProcessId}");
             SessionAdded?.Invoke(this, newSession);
         }
 
@@ -319,7 +323,7 @@ namespace AppAudioSwitcherUtility.Audio
             if (_sessions.TryGetValue(session.ProcessId, out Collection<AudioDeviceSession> collection))
             {
                 collection.Remove(session);
-                Console.WriteLine($"Session removed: {session.Id} for process: {session.ProcessId}");
+                FileLogger.LogInfo($"Session removed: {session.Id} for process: {session.ProcessId}");
             }
         }
 
