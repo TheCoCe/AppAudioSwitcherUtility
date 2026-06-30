@@ -146,6 +146,11 @@
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Server\AppAudioSwitcherServer.cs" />
+    <Compile Include="Server\ConnectionManager.cs" />
+    <Compile Include="Server\Messages\GetDevicesMessage.cs" />
+    <Compile Include="Server\Messages\GetFocusedMessage.cs" />
+    <Compile Include="Server\Messages\MessageHandler.cs" />
+    <Compile Include="Server\Messages\SetAppDeviceMessage.cs" />
     <Compile Include="Utils\CommandLineParser.cs" />
     <Compile Include="Utils\FileLogger.cs" />
   </ItemGroup>

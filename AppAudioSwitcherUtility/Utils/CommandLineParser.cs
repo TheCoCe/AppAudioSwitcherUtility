@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace AppAudioSwitcherUtility.Utils
@@ -18,7 +19,7 @@ namespace AppAudioSwitcherUtility.Utils
 
         public string GetStringArgument(string key, char shortKey)
         {
-            var index = _args.IndexOf("--" + key);
+            int index = _args.IndexOf("--" + key);
 
             if (index >= 0 && _args.Count > index)
             {
@@ -33,6 +34,39 @@ namespace AppAudioSwitcherUtility.Utils
             }
 
             return null;
+        }
+
+        public int GetIntArgument(string key, char shortKey, int defaultValue = 0)
+        {
+            int index = _args.IndexOf("--" + key);
+
+            if (index >= 0 && _args.Count > index)
+            {
+                try
+                {
+                    return int.Parse(_args[index + 1]);
+                }
+                catch
+                {
+                    return defaultValue;
+                }
+            }
+            
+            index = _args.IndexOf("-" + shortKey);
+
+            if (index >= 0 && _args.Count > index)
+            {
+                try
+                {
+                    return int.Parse(_args[index + 1]);
+                }
+                catch
+                {
+                    return defaultValue;
+                }
+            }
+            
+            return defaultValue;
         }
 
         public bool HasStringKey(string key, char shortKey)

@@ -1,211 +1,177 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Net;
-using System.Net.Sockets;
+using System.Net.WebSockets;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using AppAudioSwitcherUtility.Server.Messages;
 using AppAudioSwitcherUtility.Utils;
 
 namespace AppAudioSwitcherUtility.Server
 {
-    public class AppAudioSwitcherServer
+    public class AppAudioSwitcherWebSocketServer
     {
-        public readonly struct Request
+        private readonly HttpListener _listener;
+        private readonly MessageRouter _router;
+        private readonly ConnectionManager _connectionManager;
+        
+        public AppAudioSwitcherWebSocketServer(int port)
         {
-            public Request(TcpClient client, string message)
-            {
-                Client = client;
-                Message = message;
-            }
-            
-            public TcpClient Client { get; }
-            public string Message { get; }
+            _listener = new HttpListener();
+            _listener.Prefixes.Add($"http://localhost:{port}/ws/");
+            _router = new MessageRouter();
+            RegisterHandlers();
+            RegisterMessageTypes();
+            _connectionManager = new ConnectionManager();
         }
 
-        private const char Delimiter = '\0';
-
-        public delegate void MessageReceivedDelegate(Request request);
-
-        public event MessageReceivedDelegate MessageReceived;
-
-        private TcpListener _listener = null;
-        private readonly List<TcpClient> _clients = new List<TcpClient>();
-        private readonly object _lock = new object();
-        private CancellationTokenSource _cts = new CancellationTokenSource();
-
-        public AppAudioSwitcherServer(int port)
+        private void RegisterHandlers()
         {
-            _listener = new TcpListener(IPAddress.Loopback, port);
+            _router.RegisterHandler(new DeviceInfoHandler());
+            _router.RegisterHandler(new SetAppDeviceMessageHandler());
+            _router.RegisterHandler(new FocusedMessageHandler());
         }
 
-        ~AppAudioSwitcherServer()
+        private void RegisterMessageTypes()
         {
-            _listener?.Stop();
-            _listener = null;
+            _router.RegisterMessageType<DevicesMessageRequest>();
+            _router.RegisterMessageType<DevicesMessageResponse>();
+            _router.RegisterMessageType<SetAppDeviceMessageRequest>();
+            _router.RegisterMessageType<SetAppDeviceMessageResponse>();
+            _router.RegisterMessageType<FocusedMessageRequest>();
+            _router.RegisterMessageType<FocusedMessageResponse>();
+            _router.RegisterMessageType<InvalidMessage>();
         }
-
+        
         public async Task<int> RunAsync()
         {
-            _listener.Start();
-            FileLogger.LogInfo($"Listening on port {((IPEndPoint)_listener.LocalEndpoint).Port}");
-
-            while (!_cts.IsCancellationRequested)
+            try
             {
-                try
+                _listener.Start();
+            }
+            catch (HttpListenerException e)
+            {
+                FileLogger.LogError(e.ToString());
+                return 0;
+            }
+            
+            FileLogger.LogInfo("Test");
+            foreach (string p in _listener.Prefixes)
+                FileLogger.LogInfo("Prefix active: " + p);
+            FileLogger.LogInfo(_listener.Prefixes.Count.ToString());
+
+            while (_listener.IsListening)
+            {
+                HttpListenerContext httpListenerContext = await _listener.GetContextAsync();
+
+                if (httpListenerContext.Request.IsWebSocketRequest)
                 {
-                    AddClient(await _listener.AcceptTcpClientAsync());
+                    _ = HandleClientAsync(httpListenerContext);
                 }
-                catch (ObjectDisposedException)
+                else
                 {
-                    return -1;
+                    FileLogger.LogInfo("Rejected connection");
+                    httpListenerContext.Response.StatusCode = 400;
+                    httpListenerContext.Response.Close();
                 }
             }
 
             return 0;
         }
 
-        private void AddClient(TcpClient client)
+        private async Task HandleClientAsync(HttpListenerContext httpListenerContext)
         {
-            if(client == null) return;
-
-            int numClients = 0;
-            lock (_lock)
-            {
-                _clients.Add(client);
-                numClients = _clients.Count;
-            }
+            HttpListenerWebSocketContext wsContext = await httpListenerContext.AcceptWebSocketAsync(null);
+            WebSocket webSocket = wsContext.WebSocket;
             
-            _ = HandleClientAsync(client, _cts.Token);
-
-            FileLogger.LogInfo($"Client {client.Client.RemoteEndPoint} connected");
-            FileLogger.LogInfo($"Num connected clients: {numClients}");
-        }
-
-        private void RemoveClient(TcpClient client)
-        {
-            if (client == null) return;
+            ConnectionManager.ConnectionInfo connectionInfo = _connectionManager.AddSocket(webSocket);
+            FileLogger.LogInfo($"Client connected: {connectionInfo.Id}");
             
-            int numClients = 0;
-            lock (_lock)
-            {
-                _clients.Remove(client);
-                numClients = _clients.Count;
-            }
-            
-            client.Close();
-            FileLogger.LogInfo("Client disconnected");
-            FileLogger.LogInfo($"Num connected clients: {numClients}");
-        }
+            byte[] buffer = new byte[4096];
 
-        private async Task HandleClientAsync(TcpClient client, CancellationToken ctsToken)
-        {
             try
             {
-                using (NetworkStream stream = client.GetStream())
+                while (webSocket.State == WebSocketState.Open)
                 {
-                    byte[] buffer = new byte[1024];
-                    List<byte> rollingBuffer = new List<byte>(2048);
-                    
-                    while (!ctsToken.IsCancellationRequested)
+                    WebSocketReceiveResult result =
+                        await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+
+                    if (result.MessageType == WebSocketMessageType.Close)
+                        break;
+
+                    string messageContent = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                    FileLogger.LogDebug($"Received message from {connectionInfo.Id}: {messageContent}");
+
+                    PluginMessage message;
+                    try
                     {
-                        int bytesRead = 0;
-                        try
-                        {
-                            bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length, ctsToken);
-                        }
-                        catch (IOException) { break; }
-                        catch (SocketException)  { break; }
-                        catch (ObjectDisposedException) { break; }
-                        catch (Exception ex)
-                        {
-                            FileLogger.LogError($"Unexpected exception occured while reading stream: {ex}");
-                            break;
-                        }
+                        message = JsonSerializer.Deserialize<PluginMessage>(messageContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    }
+                    catch (Exception e)
+                    {
+                        FileLogger.LogError($"Recieved invalid message: {e}");
+                        continue;
+                    }
 
-                        if (bytesRead == 0)
-                        {
-                            break;
-                        }
+                    if (message.Type == MessageType.Invalid)
+                    {
+                        FileLogger.LogError($"Failed to deserialize message into a valid message type: {message}");
+                        continue;
+                    }
+                    
+                    FileLogger.LogDebug($"Received message from {connectionInfo.Id}: {message.Type} {message.Payload}");
 
-                        for (int i = 0; i < bytesRead; i++)
-                        {
-                            if (buffer[i] == 0)
-                            {
-                                string message = Encoding.UTF8.GetString(rollingBuffer.ToArray());
-                                MessageReceived?.Invoke(new Request(client, message));
-                                rollingBuffer.Clear();
-                            }
-                            else
-                            {
-                                rollingBuffer.Add(buffer[i]);
-                            }
-                        }
+                    IMessage response = await _router.HandleAsync(message);
+                    if (response.MessageType != MessageType.Invalid)
+                    {
+                        _ = SendResponse(PluginMessage.FromMessage(response), connectionInfo);
                     }
                 }
             }
+            catch (Exception e)
+            {
+                FileLogger.LogError(e.ToString());
+            }
             finally
             {
-                RemoveClient(client);
+                FileLogger.LogInfo($"Client disconnected: {connectionInfo.Id}");
+                await _connectionManager.RemoveSocketAsync(connectionInfo.Id);
             }
         }
 
         public void Stop()
         {
-            FileLogger.LogInfo("Stopping server...");
-            _cts.Cancel();
             _listener.Stop();
-
-            lock (_lock)
-            {
-                foreach (TcpClient client in _clients)
-                {
-                    try
-                    {
-                        client?.Close();
-                    }
-                    catch
-                    {
-                        // ignored
-                    }
-                }
-                
-                _clients.Clear();
-            }
+            _listener.Close();
         }
 
-        public async Task SendMessage(TcpClient client, string message)
+        public async Task<PluginMessage> HandleMessage(PluginMessage message)
         {
-            if (client == null || !client.Connected) return;
-            try
-            {
-                if (message.Length == 0 || message[message.Length - 1] != Delimiter)
-                {
-                    message += Delimiter;
-                }
-                NetworkStream stream = client.GetStream();
-                FileLogger.LogInfo($"Sending message to {client.Client.RemoteEndPoint}: {message}");
-                byte[] buffer = Encoding.UTF8.GetBytes(message);
-                await stream.WriteAsync(buffer, 0, buffer.Length, _cts.Token);
-            }
-            catch (Exception ex)
-            {
-                FileLogger.LogError($"Send Message failed trying to send message {message} to {client.Client.RemoteEndPoint}: {ex}");
-            }
+            IMessage response = await _router.HandleAsync(message);
+            return PluginMessage.FromMessage(response);
+        }
+
+        public Task Broadcast(PluginMessage message)
+        {
+            return SendResponse(message, _connectionManager.Connections);
+        }
+
+        private static Task SendResponse(PluginMessage message, ConnectionManager.ConnectionInfo connections)
+        {
+            return SendResponse(message, new[] { connections });
         }
         
-        public async Task BroadcastMessage(string message)
+        private static async Task SendResponse(PluginMessage message, IEnumerable<ConnectionManager.ConnectionInfo> connections)
         {
-            List<TcpClient> clients;
-            lock (_lock)
-            {
-                clients = _clients;
-            }
-            
-            List<Task> tasks = clients.Select(client => SendMessage(client, message)).ToList();
-            await Task.WhenAll(tasks.ToArray());
+            string json = JsonSerializer.Serialize(message);
+            byte[] buffer = Encoding.UTF8.GetBytes(json);
+            IEnumerable<Task> tasks = connections.Select(c =>
+                c.WebSocket.SendAsync(new ArraySegment<byte>(buffer), WebSocketMessageType.Text, true,
+                    CancellationToken.None));
+            await Task.WhenAll(tasks);
         }
     }
 }

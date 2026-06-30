@@ -2,6 +2,7 @@
 
 using System.Net;
 using System.Net.Sockets;
+using System.Net.WebSockets;
 using System.Text;
 
 namespace AppAudioSwitcherTestClient;
@@ -10,7 +11,9 @@ public static class Program
 {
     public static async Task<int> Main(string[] args)
     {
-        AppAudioSwitcherTestClient client = new AppAudioSwitcherTestClient();
+        /*AppAudioSwitcherTestClient client = new AppAudioSwitcherTestClient();
+        await client.Run();*/
+        AppAudioSwitcherTestWebSocketClient client = new AppAudioSwitcherTestWebSocketClient();
         await client.Run();
         return 0;
     }
@@ -106,5 +109,72 @@ public class AppAudioSwitcherTestClient
         }
 
         Console.WriteLine("Press any key to exit...");
+    }
+}
+
+class AppAudioSwitcherTestWebSocketClient
+{
+    public async Task Run()
+    {
+        using ClientWebSocket socket = new ClientWebSocket();
+        Uri uri = new Uri("ws://localhost:32122/ws/");
+
+        Console.WriteLine("Connecting...");
+        await socket.ConnectAsync(uri, CancellationToken.None);
+        Console.WriteLine("Connected!");
+        
+        // Start background task to echo server messages
+        _ = Task.Run(async () =>
+        {
+            byte[] buffer = new byte[4096];
+
+            while (socket.State == WebSocketState.Open)
+            {
+                WebSocketReceiveResult result = await socket.ReceiveAsync(
+                    new ArraySegment<byte>(buffer),
+                    CancellationToken.None
+                );
+
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    Console.WriteLine("Server closed connection.");
+                    break;
+                }
+
+                string json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                Console.WriteLine($"[SERVER] {json}");
+            }
+        });
+
+        // Send a message
+        const string MESSAGE = "{\"type\":\"GetDevices\",\"payload\":{\"DataFlow\":\"eRender\"}}";
+        Console.WriteLine("Type a message to send. Type 'close' to exit...");
+
+        while (true)
+        {
+            string input = Console.ReadLine();
+
+            if (string.IsNullOrWhiteSpace(input))
+                input = MESSAGE;
+            
+            if(string.Equals(input, "close", StringComparison.CurrentCultureIgnoreCase))
+                break;
+
+            byte[] bytes = Encoding.UTF8.GetBytes(input);
+
+            await socket.SendAsync(
+                new ArraySegment<byte>(bytes),
+                WebSocketMessageType.Text,
+                endOfMessage: true,
+                cancellationToken: CancellationToken.None
+            );
+        }
+
+        Console.WriteLine("Closing connection...");
+        await socket.CloseAsync(
+            WebSocketCloseStatus.NormalClosure,
+            "Client closing",
+            CancellationToken.None
+        );
     }
 }

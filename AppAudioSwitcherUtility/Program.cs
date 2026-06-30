@@ -5,127 +5,89 @@ using System.Threading.Tasks;
 using AppAudioSwitcherUtility.Audio;
 using AppAudioSwitcherUtility.Process;
 using AppAudioSwitcherUtility.Server;
+using AppAudioSwitcherUtility.Server.Messages;
 using AppAudioSwitcherUtility.Utils;
 
 namespace AppAudioSwitcherUtility
 {
+    public static class Services
+    {
+        public static AudioDeviceManager DeviceManager { get; set; }
+        public static CommandLineParser CommandLineParser { get; set; }
+    }
+    
     internal static class Program
     {
-        private static AudioDeviceManager _deviceManager;
-        
         public static async Task<int> Main(string[] args)
         {
             FileLogger.Init();
-            CommandLineParser commandLineParser = new CommandLineParser(args);
-            string mode = commandLineParser.GetFirstKey();
-            
-            _deviceManager = new AudioDeviceManager();
-            
+            Services.CommandLineParser = new CommandLineParser(args);
+            Services.DeviceManager = new AudioDeviceManager();
+
+            string mode = Services.CommandLineParser.GetFirstKey();
             FileLogger.LogInfo($"Starting in mode {mode}");
             switch (mode)
             {
                 case "get":
                 {
-                    string getResponse = HandleGetCommand(commandLineParser);
-                    if (!string.IsNullOrEmpty(getResponse))
-                    {
-                        Console.WriteLine(getResponse);
-                        return 0;
-                    }
-
-                    return -1;
+                    string getResponse = HandleGetCommand(Services.CommandLineParser);
+                    if (string.IsNullOrEmpty(getResponse)) return -1;
+                    Console.WriteLine(getResponse);
+                    return 0;
                 }
                 case "set":
                 {
-                    return HandleSetCommand(commandLineParser);
+                    return HandleSetCommand();
                 }
                 case "server":
                 {
-                    return await HandleServerMode(commandLineParser);
+                    return await HandleServerMode();
                 }
             }
 
             return 0;
         }
 
-        private static async Task<int> HandleServerMode(CommandLineParser parser)
+        private static async Task<int> HandleServerMode()
         {
-            int port = 32122;
-            string portStr = parser.GetStringArgument("port", 'p');
-            if (!string.IsNullOrEmpty(portStr))
-            {
-                try
-                {
-                    port = int.Parse(portStr);
-                }
-                catch
-                {
-                    // Ignore
-                }
-            }
+            int port = Services.CommandLineParser.GetIntArgument("port", 'p', 32122);
+            AppAudioSwitcherWebSocketServer server = new AppAudioSwitcherWebSocketServer(port);
             
-            AppAudioSwitcherServer server = new AppAudioSwitcherServer(port);
-            server.MessageReceived += (message) =>
-            {
-                HandleMessageReceived(server, message);
-            };
+            Console.WriteLine(JsonSerializer.Serialize(PluginMessage.FromMessage(new DevicesMessageRequest(EDataFlow.eRender))));
             
             BackgroundProcessWatcher backgroundProcessWatcher = new BackgroundProcessWatcher();
             backgroundProcessWatcher.ForegroundProcessChanged += (processId) =>
             {
-                _ = server.BroadcastMessage(GetProcessJsonString(true, processId));
+                FileLogger.LogInfo($"Foreground process changed: {processId}");
+                _ = server.HandleMessage(PluginMessage.FromMessage(new FocusedMessageRequest(true, processId)))
+                    .ContinueWith(t => { server.Broadcast(t.Result); });
             };
             backgroundProcessWatcher.Start();
             
             AudioDeviceManager.DeviceDelegate devicesChanged = (device, flow) =>
             {
                 FileLogger.LogInfo($"Device changed: {device.Id}");
-                _ = server.BroadcastMessage(GetDevicesJsonString(device.Flow));
+                _ = server.HandleMessage(PluginMessage.FromMessage(new DevicesMessageRequest(device.Flow)))
+                    .ContinueWith(t => { server.Broadcast(t.Result); });
             };
 
-            _deviceManager.DeviceAdded += devicesChanged;
-            _deviceManager.DeviceRemoved += devicesChanged;
+            Services.DeviceManager.DeviceAdded += devicesChanged;
+            Services.DeviceManager.DeviceRemoved += devicesChanged;
 
             AudioDevice.SessionDelegate sessionChanged = (device, session) =>
             {
                 FileLogger.LogInfo($"Session changed for process {session.ProcessId} on device {device.Id}");
                 if (session.ProcessId != backgroundProcessWatcher.CurrentForegroundProcessId) return;
                 FileLogger.LogInfo($"Session changed for foreground process: {backgroundProcessWatcher.CurrentForegroundProcessId}");
-                _ = server.BroadcastMessage(GetProcessJsonString(false, backgroundProcessWatcher.CurrentForegroundProcessId));
+                _ = server.HandleMessage(PluginMessage.FromMessage(
+                        new FocusedMessageRequest(false, backgroundProcessWatcher.CurrentForegroundProcessId)))
+                    .ContinueWith(t => { server.Broadcast(t.Result); });
             };
             
-            _deviceManager.SessionAdded += sessionChanged;
-            _deviceManager.SessionRemoved += sessionChanged;
+            Services.DeviceManager.SessionAdded += sessionChanged;
+            Services.DeviceManager.SessionRemoved += sessionChanged;
             
             return await server.RunAsync();
-        }
-
-        private static void HandleMessageReceived(AppAudioSwitcherServer server, AppAudioSwitcherServer.Request request)
-        {
-            FileLogger.LogInfo($"Message received from client {request.Client.Client.RemoteEndPoint}: {request.Message} ");
-            if (request.Message.ToLower() == "close")
-            {
-                server.Stop();
-                return;
-            }
-            
-            string[] args = request.Message.Split(' ');
-            CommandLineParser parser = new CommandLineParser(args);
-            
-            string mode = parser.GetFirstKey();
-            switch (mode)
-            {
-                case "get":
-                {
-                    _ = server.SendMessage(request.Client, HandleGetCommand(parser));
-                    break;
-                }
-                case "set":
-                {
-                    HandleSetCommand(parser);
-                    break;
-                }
-            }
         }
 
         private static string HandleGetCommand(CommandLineParser parser)
@@ -159,17 +121,17 @@ namespace AppAudioSwitcherUtility
             return JsonSerializer.Serialize(new
             {
                 id = "devices", 
-                payload = _deviceManager.GetAudioDeviceInfo(dataFlow)
+                payload = Services.DeviceManager.GetAudioDeviceInfo(dataFlow)
             });
         }
 
         private static string GetProcessJsonString(bool includeIcon, uint? processId = null)
         {
             uint id = processId ?? ProcessUtilities.GetForegroundWindowProcessId();
-            string deviceId = _deviceManager.GetPersitedDefaultAudioEndpoint(id, EDataFlow.eRender, ERole.eMultimedia);
+            string deviceId = Services.DeviceManager.GetPersitedDefaultAudioEndpoint(id, EDataFlow.eRender, ERole.eMultimedia);
             if (string.IsNullOrEmpty(deviceId))
             {
-                deviceId = _deviceManager.GetPersitedDefaultAudioEndpoint(id, EDataFlow.eRender, ERole.eConsole);
+                deviceId = Services.DeviceManager.GetPersitedDefaultAudioEndpoint(id, EDataFlow.eRender, ERole.eConsole);
             }
 
             JsonObject payload = new JsonObject
@@ -177,7 +139,7 @@ namespace AppAudioSwitcherUtility
                 ["processId"] = id.ToString(),
                 ["processName"] = ProcessUtilities.GetFriendlyName((int)id),
                 ["deviceId"] = AudioDeviceManager.UnpackDeviceId(deviceId),
-                ["hasSession"] = _deviceManager.HasSession((int)id)
+                ["hasSession"] = Services.DeviceManager.HasSession((int)id)
             };
 
             if (includeIcon)
@@ -192,16 +154,16 @@ namespace AppAudioSwitcherUtility
             });
         }
 
-        private static int HandleSetCommand(CommandLineParser parser)
+        private static int HandleSetCommand()
         {
-            string mode = parser.GetStringArgument("set", 's');
+            string mode = Services.CommandLineParser.GetStringArgument("set", 's');
             FileLogger.LogInfo($"Handling set command: {mode}");
             switch (mode)
             {
                 case "appDevice":
                 {
                     // Try to get the process id param
-                    string processStr = parser.GetStringArgument("process", 'p');
+                    string processStr = Services.CommandLineParser.GetStringArgument("process", 'p');
                     if (string.IsNullOrEmpty(processStr))
                     {
                         return -1;
@@ -220,15 +182,15 @@ namespace AppAudioSwitcherUtility
                     }
 
                     // Try to parese the device id parameter
-                    string device = parser.GetStringArgument("device", 'd');
+                    string device = Services.CommandLineParser.GetStringArgument("device", 'd');
                     if (string.IsNullOrEmpty(device))
                     {
                         return -1;
                     }
                     
                     // Lastly try to set the endpoints
-                    bool bConsoleSuccess = _deviceManager.SetPersistedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eConsole, device);
-                    bool bMultimediaSuccess = _deviceManager.SetPersistedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eMultimedia, device);
+                    bool bConsoleSuccess = Services.DeviceManager.SetPersistedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eConsole, device);
+                    bool bMultimediaSuccess = Services.DeviceManager.SetPersistedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eMultimedia, device);
 
                     return bConsoleSuccess || bMultimediaSuccess ? 0 : -1;       
                 }

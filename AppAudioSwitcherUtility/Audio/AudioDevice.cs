@@ -73,6 +73,11 @@ namespace AppAudioSwitcherUtility.Audio
             return dataFlow < EDataFlow.eAll ? _devices[(int)dataFlow] : null;
         }
 
+        public IReadOnlyDictionary<string, AudioDevice> GetDeviceDictReadOnly(EDataFlow dataFlow)
+        {
+            return dataFlow < EDataFlow.eAll ? _devices[(int)dataFlow] : null;
+        }
+
         void IMMNotificationClient.OnDeviceStateChanged(string pwstrDeviceId, DeviceState dwNewState)
         {
             AudioDevice foundDev = GetAudioDevice(pwstrDeviceId);
