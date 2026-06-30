@@ -38,10 +38,9 @@ namespace AppAudioSwitcherUtility.Server
                 return 0;
             }
             
-            FileLogger.LogInfo("Test");
+            FileLogger.LogInfo("Server started");
             foreach (string p in _listener.Prefixes)
                 FileLogger.LogInfo("Prefix active: " + p);
-            FileLogger.LogInfo(_listener.Prefixes.Count.ToString());
 
             while (_listener.IsListening)
             {

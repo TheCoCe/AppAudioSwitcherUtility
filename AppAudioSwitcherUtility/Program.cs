@@ -53,8 +53,6 @@ namespace AppAudioSwitcherUtility
             int port = Services.CommandLineParser.GetIntArgument("port", 'p', 32122);
             AppAudioSwitcherWebSocketServer server = new AppAudioSwitcherWebSocketServer(port);
             
-            Console.WriteLine(JsonSerializer.Serialize(new PluginMessage(new DevicesMessageRequest(EDataFlow.eRender))));
-            
             BackgroundProcessWatcher backgroundProcessWatcher = new BackgroundProcessWatcher();
             backgroundProcessWatcher.ForegroundProcessChanged += (processId) =>
             {
