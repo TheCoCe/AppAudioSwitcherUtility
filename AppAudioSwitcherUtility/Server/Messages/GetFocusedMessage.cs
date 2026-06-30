@@ -4,7 +4,7 @@ using AppAudioSwitcherUtility.Process;
 
 namespace AppAudioSwitcherUtility.Server.Messages
 {
-    public readonly struct FocusedMessageRequest : IMessage
+    public class FocusedMessageRequest : IMessage
     {
         public FocusedMessageRequest(bool icon, uint? processId = null)
         {
@@ -13,26 +13,15 @@ namespace AppAudioSwitcherUtility.Server.Messages
         }
         public bool Icon { get; }
         public uint? ProcessId { get;  }
-        public MessageType MessageType => MessageType.GetFocusedRequest;
     }
     
-    public readonly struct FocusedMessageResponse : IMessage
+    public class FocusedMessageResponse : IMessage
     {
-        public FocusedMessageResponse(uint processId, string processName, string deviceId, bool hasSession, string processIconBase64)
-        {
-            ProcessId = processId;
-            ProcessName = processName;
-            DeviceId = deviceId;
-            HasSession = hasSession;
-            ProcessIconBase64 = processIconBase64; 
-        }
-
-        public uint ProcessId { get; }
-        public string ProcessName { get; }
-        public string DeviceId { get; }
-        public bool HasSession { get; }
-        public string ProcessIconBase64 { get; }
-        public MessageType MessageType => MessageType.GetFocusedResponse;
+        public uint ProcessId { get; set; }
+        public string ProcessName { get; set; }
+        public string DeviceId { get; set; }
+        public bool HasSession { get; set; }
+        public string ProcessIconBase64 { get; set; }
     }
 
     public class FocusedMessageHandler : IMessageHandler<FocusedMessageRequest>
@@ -46,10 +35,14 @@ namespace AppAudioSwitcherUtility.Server.Messages
                 deviceId = Services.DeviceManager.GetPersitedDefaultAudioEndpoint(processId, EDataFlow.eRender, ERole.eConsole);
             }
 
-            FocusedMessageResponse response = new FocusedMessageResponse(processId,
-                ProcessUtilities.GetFriendlyName((int)processId), AudioDeviceManager.UnpackDeviceId(deviceId),
-                Services.DeviceManager.HasSession((int)processId),
-                message.Icon ? ProcessIconExtractor.GetBase64IconFromProcess((int)processId) : null);
+            FocusedMessageResponse response = new FocusedMessageResponse
+            {
+                ProcessId = processId,
+                ProcessName = ProcessUtilities.GetFriendlyName((int)processId), 
+                DeviceId = AudioDeviceManager.UnpackDeviceId(deviceId),
+                HasSession = Services.DeviceManager.HasSession((int)processId),
+                ProcessIconBase64 = message.Icon ? ProcessIconExtractor.GetBase64IconFromProcess((int)processId) : null
+            };
             return Task.FromResult<IMessage>(response);
         }
     }

@@ -1,114 +1,112 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace AppAudioSwitcherUtility.Server.Messages
 {
-    public interface IMessage
-    {
-        MessageType MessageType { get; }
-    }
+    public interface IMessage { }
 
-    public interface IMessageHandler<in TMessage> where TMessage : struct, IMessage
+    public interface IMessageHandler<in TMessage> where TMessage : IMessage
     {
         Task<IMessage> HandleAsync(TMessage message);
     }
     
-    public readonly struct InvalidMessage : IMessage
+    public class MessageHandlerAdapter<TMessage> : IMessageHandler
+        where TMessage : IMessage
     {
-        public MessageType MessageType => MessageType.Invalid;
-    }
+        private readonly IMessageHandler<TMessage> _inner;
 
-    public enum MessageType
-    {
-        Invalid,
-        GetDevicesRequest,
-        GetDevicesResponse,
-        GetFocusedRequest,
-        GetFocusedResponse,
-        SetAppDeviceRequest,
-        SetAppDeviceResponse,
+        public MessageHandlerAdapter(IMessageHandler<TMessage> inner)
+        {
+            _inner = inner;
+        }
+
+        public Task<IMessage> HandleMessageAsync(IMessage message)
+        {
+            // Safe cast because router ensures correct type
+            return _inner.HandleAsync((TMessage)message);
+        }
     }
     
-    public struct PluginMessage
+    public class PluginMessage
     {
-        public PluginMessage(MessageType messageType, JsonElement payload)
+        public PluginMessage() { }
+        public PluginMessage(string messageType, JsonElement payload)
         {
             Type = messageType;
             Payload = payload;
         }
-        
-        public MessageType Type { get; set; }
-        public JsonElement Payload { get; set; }
 
-        public static PluginMessage FromMessage<TMessage>(TMessage message) where TMessage : IMessage
+        public PluginMessage(IMessage message)
         {
-            return new PluginMessage(message.MessageType, JsonSerializer.SerializeToElement((object)message));
+            Type = message.GetType().Name;
+            Payload = JsonSerializer.SerializeToElement((object)message);
         }
+        
+        public string Type { get; set; }
+        public JsonElement Payload { get; set; }
     }
     
     public interface IMessageHandler
     {
-        MessageType MessageType { get; }
-        Type PayloadType { get; }
-        Task<JsonElement?> HandleMessageAsync(JsonElement payload);
+        Task<IMessage> HandleMessageAsync(IMessage payload);
     }
 
     public class MessageRouter
     {
-        private readonly Dictionary<Type, Func<IMessage, Task<IMessage>>> _handlers =
-            new Dictionary<Type, Func<IMessage, Task<IMessage>>>();
-        private readonly Dictionary<MessageType, Type> _messageTypes = new Dictionary<MessageType, Type>();
-        
-        public void RegisterHandler<TMessage>(IMessageHandler<TMessage> handler) where TMessage : struct, IMessage
+        private readonly Dictionary<Type, IMessageHandler> _handlers = new Dictionary<Type, IMessageHandler>();
+
+        public MessageRouter()
         {
-            _handlers[typeof(TMessage)] = (msgBase) =>
+            RegisterHandlers();
+        }
+
+        private void RegisterHandlers()
+        {
+            IEnumerable<Type> handlerTypes = AppDomain.CurrentDomain.GetAssemblies()
+                .SelectMany(a => a.GetTypes())
+                .Where(t => !t.IsInterface && !t.IsAbstract && t.GetInterfaces().Any(i =>
+                    i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IMessageHandler<>)));
+
+            foreach (Type handlerType in handlerTypes)
             {
-                TMessage typed = (TMessage)msgBase;
-                return handler.HandleAsync(typed);
-            };
+                Type interfaceType = handlerType.GetInterfaces().First(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IMessageHandler<>));
+                Type messageType = interfaceType.GetGenericArguments()[0];
+                object handlerInstance = Activator.CreateInstance(handlerType);
+                Type adapterType = typeof(MessageHandlerAdapter<>).MakeGenericType(messageType);
+                IMessageHandler messageHandler = (IMessageHandler)Activator.CreateInstance(adapterType, handlerInstance);
+                _handlers[messageType] = messageHandler;
+            }
         }
 
-        public void RegisterMessageType<TMessage>() where TMessage : struct, IMessage
+        private IMessage DeserializeMessage(PluginMessage message)
         {
-            TMessage temp = default(TMessage);
-            MessageType messageType = temp.MessageType;
-            _messageTypes[messageType] = typeof(TMessage);
-        }
-
-        private Func<IMessage, Task<IMessage>> GetHandler(Type messageType)
-        {
-            return _handlers[messageType];
-        }
-
-        private Type GetMessageType(MessageType messageType)
-        {
-            return _messageTypes[messageType];
+            Type targeType = _handlers.Keys.First(t => t.Name == message.Type);
+            if (targeType == null)
+            {
+                throw new InvalidOperationException($"No handler found handling {message.Type}");
+            }
+            
+            return (IMessage)message.Payload.Deserialize(targeType);
         }
         
         public Task<IMessage> HandleAsync(PluginMessage message)
         {
-            Type targeType = GetMessageType(message.Type);
-            if (targeType == null)
-            {
-                throw new InvalidOperationException("Cannot handle message of type " + message.Type);
-            }
-            
-            IMessage messageTyped = (IMessage)JsonSerializer.Deserialize(message.Payload.ToString(), targeType);
+            IMessage messageTyped = DeserializeMessage(message);
             if (messageTyped == null)
             {
-                throw new InvalidOperationException($"Failed to cast message to {targeType}, the message payload might be malformed for the type {message.Type}");
+                throw new InvalidOperationException($"Failed to deserialize message {message.Type}");
             }
             
-            return RouteAsync(messageTyped);
-        }
+            IMessageHandler handler = _handlers[messageTyped.GetType()];
+            if (handler == null)
+            {
+                throw new InvalidOperationException($"No handler found for {message.Type}");
+            }
 
-        private Task<IMessage> RouteAsync(IMessage message)
-        {
-            Type msgType = message.GetType();
-            Func<IMessage, Task<IMessage>> handler = GetHandler(msgType);
-            return handler == null ? throw new Exception($"Missing handler for {msgType}") : handler(message);
+            return handler.HandleMessageAsync(messageTyped);
         }
     }
 }

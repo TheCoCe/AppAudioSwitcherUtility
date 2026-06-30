@@ -3,7 +3,7 @@ using AppAudioSwitcherUtility.Audio;
 
 namespace AppAudioSwitcherUtility.Server.Messages
 {
-    public readonly struct SetAppDeviceMessageRequest : IMessage
+    public class SetAppDeviceMessageRequest : IMessage
     {
         public SetAppDeviceMessageRequest(uint processId, string deviceId)
         {
@@ -13,10 +13,9 @@ namespace AppAudioSwitcherUtility.Server.Messages
 
         public uint ProcessId { get; }
         public string DeviceId { get; }
-        public MessageType MessageType => MessageType.SetAppDeviceRequest;
     }
     
-    public readonly struct SetAppDeviceMessageResponse : IMessage
+    public class SetAppDeviceMessageResponse : IMessage
     {
         public SetAppDeviceMessageResponse(bool success)
         {
@@ -24,7 +23,6 @@ namespace AppAudioSwitcherUtility.Server.Messages
         }
 
         public bool Success { get; }
-        public MessageType MessageType => MessageType.SetAppDeviceResponse;
     }
 
     public class SetAppDeviceMessageHandler : IMessageHandler<SetAppDeviceMessageRequest>

@@ -53,13 +53,13 @@ namespace AppAudioSwitcherUtility
             int port = Services.CommandLineParser.GetIntArgument("port", 'p', 32122);
             AppAudioSwitcherWebSocketServer server = new AppAudioSwitcherWebSocketServer(port);
             
-            Console.WriteLine(JsonSerializer.Serialize(PluginMessage.FromMessage(new DevicesMessageRequest(EDataFlow.eRender))));
+            Console.WriteLine(JsonSerializer.Serialize(new PluginMessage(new DevicesMessageRequest(EDataFlow.eRender))));
             
             BackgroundProcessWatcher backgroundProcessWatcher = new BackgroundProcessWatcher();
             backgroundProcessWatcher.ForegroundProcessChanged += (processId) =>
             {
                 FileLogger.LogInfo($"Foreground process changed: {processId}");
-                _ = server.HandleMessage(PluginMessage.FromMessage(new FocusedMessageRequest(true, processId)))
+                _ = server.HandleMessage(new PluginMessage(new FocusedMessageRequest(true, processId)))
                     .ContinueWith(t => { server.Broadcast(t.Result); });
             };
             backgroundProcessWatcher.Start();
@@ -67,7 +67,7 @@ namespace AppAudioSwitcherUtility
             AudioDeviceManager.DeviceDelegate devicesChanged = (device, flow) =>
             {
                 FileLogger.LogInfo($"Device changed: {device.Id}");
-                _ = server.HandleMessage(PluginMessage.FromMessage(new DevicesMessageRequest(device.Flow)))
+                _ = server.HandleMessage(new PluginMessage(new DevicesMessageRequest(device.Flow)))
                     .ContinueWith(t => { server.Broadcast(t.Result); });
             };
 
@@ -79,7 +79,7 @@ namespace AppAudioSwitcherUtility
                 FileLogger.LogInfo($"Session changed for process {session.ProcessId} on device {device.Id}");
                 if (session.ProcessId != backgroundProcessWatcher.CurrentForegroundProcessId) return;
                 FileLogger.LogInfo($"Session changed for foreground process: {backgroundProcessWatcher.CurrentForegroundProcessId}");
-                _ = server.HandleMessage(PluginMessage.FromMessage(
+                _ = server.HandleMessage(new PluginMessage(
                         new FocusedMessageRequest(false, backgroundProcessWatcher.CurrentForegroundProcessId)))
                     .ContinueWith(t => { server.Broadcast(t.Result); });
             };

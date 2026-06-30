@@ -23,27 +23,7 @@ namespace AppAudioSwitcherUtility.Server
             _listener = new HttpListener();
             _listener.Prefixes.Add($"http://localhost:{port}/ws/");
             _router = new MessageRouter();
-            RegisterHandlers();
-            RegisterMessageTypes();
             _connectionManager = new ConnectionManager();
-        }
-
-        private void RegisterHandlers()
-        {
-            _router.RegisterHandler(new DeviceInfoHandler());
-            _router.RegisterHandler(new SetAppDeviceMessageHandler());
-            _router.RegisterHandler(new FocusedMessageHandler());
-        }
-
-        private void RegisterMessageTypes()
-        {
-            _router.RegisterMessageType<DevicesMessageRequest>();
-            _router.RegisterMessageType<DevicesMessageResponse>();
-            _router.RegisterMessageType<SetAppDeviceMessageRequest>();
-            _router.RegisterMessageType<SetAppDeviceMessageResponse>();
-            _router.RegisterMessageType<FocusedMessageRequest>();
-            _router.RegisterMessageType<FocusedMessageResponse>();
-            _router.RegisterMessageType<InvalidMessage>();
         }
         
         public async Task<int> RunAsync()
@@ -115,19 +95,13 @@ namespace AppAudioSwitcherUtility.Server
                         FileLogger.LogError($"Recieved invalid message: {e}");
                         continue;
                     }
-
-                    if (message.Type == MessageType.Invalid)
-                    {
-                        FileLogger.LogError($"Failed to deserialize message into a valid message type: {message}");
-                        continue;
-                    }
                     
                     FileLogger.LogDebug($"Received message from {connectionInfo.Id}: {message.Type} {message.Payload}");
 
                     IMessage response = await _router.HandleAsync(message);
-                    if (response.MessageType != MessageType.Invalid)
+                    if (response != null)
                     {
-                        _ = SendResponse(PluginMessage.FromMessage(response), connectionInfo);
+                        _ = SendResponse(new PluginMessage(response), connectionInfo);
                     }
                 }
             }
@@ -151,7 +125,7 @@ namespace AppAudioSwitcherUtility.Server
         public async Task<PluginMessage> HandleMessage(PluginMessage message)
         {
             IMessage response = await _router.HandleAsync(message);
-            return PluginMessage.FromMessage(response);
+            return new PluginMessage(response);
         }
 
         public Task Broadcast(PluginMessage message)

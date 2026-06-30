@@ -1,11 +1,12 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using AppAudioSwitcherUtility.Audio;
 
 namespace AppAudioSwitcherUtility.Server.Messages
 {
-    public readonly struct DevicesMessageRequest : IMessage
+    public class DevicesMessageRequest : IMessage
     {
         public EDataFlow DataFlow { get; }
         
@@ -13,11 +14,9 @@ namespace AppAudioSwitcherUtility.Server.Messages
         {
             DataFlow = dataFlow;
         }
-
-        public MessageType MessageType => MessageType.GetDevicesRequest;
     }
 
-    public readonly struct DevicesMessageResponse : IMessage
+    public class DevicesMessageResponse : IMessage
     {
         public readonly struct DeviceInfo
         {
@@ -37,12 +36,12 @@ namespace AppAudioSwitcherUtility.Server.Messages
         }
         
         public DeviceInfo[] Devices { get; }
+        public DevicesMessageResponse() { }
         public DevicesMessageResponse(DeviceInfo[] devices)
         {
             Devices = devices;
         }
 
-        public MessageType MessageType =>  MessageType.GetDevicesResponse;
     }
 
     public class DeviceInfoHandler : IMessageHandler<DevicesMessageRequest>
