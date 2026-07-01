@@ -112,14 +112,90 @@ Result:
 
 ## Server Mode
 
-In server mode the application starts a TCP server to listen for commands. Commands to the application are sent as UTF8 encoded strings and follow the same format as the arguments to the application. To start the application in server mode you need to start the application with the `--server` option.
+In server mode the application starts a websocket server to listen for requests. Requests to the application are sent as UTF8 encoded json.
+```JSON
+{
+	"$schema": "http://json-schema.org/draft/2019-09/schema",
+  	"title": "Request",
+	"type": "object",
+	"required": ["Type", "Payload"],
+	"properties":
+	{
+		"Type":
+		{
+			"type": "string"
+		},
+		"Payload":
+		{
+			"type": "object"
+		}
+	}
+}
+```
+
+To start the application in server mode you need to start the application with the `--server` option. 
 
 `AppAudioSwitcherUtility.exe --server [(--port|-p) <port>]`
 
-If `--port` is not specified, the server will start on `localhost:32122` and wait for a connection.
+If `--port` is not specified, the server will start on `http://localhost:32122/ws/` and wait for a connection.
+
+In server mode the app will listen for requests from connected clients and handle them as they are incoming. The app will also notify clients about changes in devices, sessions or the focused application.
+
+### Requests
+#### DevicesMessageRequest
+Request the current AudioDevice info for a device type.
+```JSON
+{
+  "$schema": "http://json-schema.org/draft/2019-09/schema",
+  "title": "DevicesMessageRequest",
+  "type": "object",
+  "required": ["DataFlow"],
+  "properties":
+  {
+    "DataFlow":
+    {
+      "type": "string"
+    }
+  }
+}
+```
+Will be responded with a list of devices that match the requested type:
+```JSON
+{
+	"$schema": "http://json-schema.org/draft/2019-09/schema",
+	"title": "DevicesMessageResponse",
+	"type": "object",
+	"required": ["Devices"],
+	"properties": {
+		"Devices": {
+			"type": "array",
+			"items": {
+				"type": "object",
+                "required": ["DeviceId", "DeviceName", "State", "DataFlow"],
+				"properties": {
+					"DeviceId": {
+						"type": "string"
+					},
+					"DeviceName": {
+						"type": "string"
+					},
+					"State": {
+						"type": "number"
+					},
+					"DataFlow": {
+						"type": "number"
+					}
+				}
+			}
+		}
+	}
+}
+```
+#### FocusedMessageRequest
+#### SetAppDeviceMessageRequest
 
 ### Example
-The AppAudioSwitcher StreamDeck plugin communicates via TCP by spawning the app as a child process and then connecting similar to this:
+The AppAudioSwitcher StreamDeck plugin communicates via websocket by spawning the app as a child process and then connecting similar to this:
 
 ```TypeScript
 const client = new Socket();
