@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
-using System.Text.Json.Nodes;
 using AppAudioSwitcherUtility.Utils;
 
 namespace AppAudioSwitcherUtility.Audio
@@ -169,20 +168,6 @@ namespace AppAudioSwitcherUtility.Audio
 
             DeviceRemoved?.Invoke(removedDev, removedDev.Flow);
             return true;
-        }
-
-        public object GetAudioDeviceInfo(EDataFlow flow)
-        {
-            return new
-            {
-                devices = GetDeviceDict(flow)?.Select(item => new
-                {
-                    item.Value.Id,
-                    item.Value.Name,
-                    item.Value.State,
-                    item.Value.Flow
-                })
-            };
         }
 
         private const string DEVINTERFACE_AUDIO_RENDER = "#{e6327cad-dcec-4949-ae8a-991e976a79d2}";
