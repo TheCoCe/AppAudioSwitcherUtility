@@ -242,6 +242,7 @@ Will cause a response to be sent that contains the following info.
 }
 ```
 #### SetAppDeviceMessageRequest
+Can be used to set the used audio device for a specific process.
 ```JSON
 {
 	"$schema": "http://json-schema.org/draft/2019-09/schema",
