@@ -146,17 +146,18 @@ In server mode the app will listen for requests from connected clients and handl
 Request the current AudioDevice info for a device type.
 ```JSON
 {
-  "$schema": "http://json-schema.org/draft/2019-09/schema",
-  "title": "DevicesMessageRequest",
-  "type": "object",
-  "required": ["DataFlow"],
-  "properties":
-  {
-    "DataFlow":
-    {
-      "type": "string"
-    }
-  }
+	"$schema": "http://json-schema.org/draft/2019-09/schema",
+	"title": "DevicesMessageRequest",
+	"type": "object",
+	"required": ["DataFlow"],
+	"properties":
+	{
+		"DataFlow":
+    	{
+      		"type": "string"
+			"description": "0 = eRender, 1 = eCapture, 2 = eAll"
+    	}
+	}
 }
 ```
 Will be responded with a list of devices that match the requested type:
@@ -181,9 +182,11 @@ Will be responded with a list of devices that match the requested type:
 					},
 					"State": {
 						"type": "number"
+						"description": "0 = ACTIVE, 1 = DISABLED, 2 = NOTPRESENT, 3 = UNPLUGGED"
 					},
 					"DataFlow": {
 						"type": "number"
+						"description": "0 = eRender, 1 = eCapture, 2 = eAll"
 					}
 				}
 			}
@@ -192,32 +195,106 @@ Will be responded with a list of devices that match the requested type:
 }
 ```
 #### FocusedMessageRequest
+Request information about a process or the currently focused process.
+```JSON
+{
+	"$schema": "http://json-schema.org/draft/2019-09/schema",
+	"title": "FocusedMessageRequest",
+	"type": "object",
+	"required": ["Icon"],
+	"properties": {
+		"Icon": {
+			"type": "boolean",
+			"description": "Indicates whether the response should include a base64 encoded icon for the focused application"
+		},
+		"ProcessId": {
+			"type": "integer",
+			"description": "Optional process ID to retrieve process data for. If not provided, the process ID of the focused application will be used."
+		}
+	}
+}
+
+```
+Will cause a response to be sent that contains the following info.
+```JSON
+{
+	"$schema": "http://json-schema.org/draft/2019-09/schema",
+	"title": "FocusedMessageResponse",
+	"type": "object",
+	"required": ["ProcessId", "ProcessName", "DeviceId", "HasSession"],
+	"properties": {
+		"ProcessId": {
+			"type": "integer"
+		},
+		"ProcessName": {
+			"type": "string"
+		},
+		"DeviceId": {
+			"type": "string"
+		},
+		"HasSession": {
+			"type": "boolean"
+		},
+		"ProcessIconBase64": {
+			"type": "string"
+		}
+	}
+}
+```
 #### SetAppDeviceMessageRequest
+```JSON
+{
+	"$schema": "http://json-schema.org/draft/2019-09/schema",
+	"title": "SetAppDeviceMessageRequest",
+	"type": "object",
+	"required": ["ProcessId", "DeviceId"],
+	"properties": {
+		"ProcessId": {
+			"type": "integer"
+		},
+		"DeviceId": {
+			"type": "string"
+		}
+	}
+}
+```
+Will cause a acknowledge response:
+```JSON
+{
+	"$schema": "http://json-schema.org/draft/2019-09/schema",
+	"title": "SetAppDeviceMessageResponse",
+	"type": "object",
+	"required": ["Success"],
+	"properties": {
+		"Success": {
+			"type": "boolean"
+		}
+	}
+}
+```
 
 ### Example
 The AppAudioSwitcher StreamDeck plugin communicates via websocket by spawning the app as a child process and then connecting similar to this:
 
 ```TypeScript
-const client = new Socket();
+export interface Message {
+    Type: string
+    Payload: any
+}
 
-client.on("data", (data) => {
-    const JsonObj = JSON.parse(data.toString());
-    switch (JsonObj.id) {
-        case "devices": {
-            // Handle device message here
-            ...
+const socket = new NodeWebSocket(`ws://localhost:32122/ws/`);
+
+socket.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data.toString()) as Message;
+    switch(msg.Type) {
+        "DevicesMessageResponse": {
+            HandleDevicesResponse(msg.Payload);
             break;
-        }
-        case "focused": {
-            // Handle focused process message here
-            ...
+        },
+        "FocusedMessageResponse": {
+            HandleFocusedResponse(msg.Payload);
             break;
         }
     }
-})
- 
-client.connect(32122, "127.0.0.1");
-
-client.write("--get devices --type render -s active");
-...
+}
 ```
